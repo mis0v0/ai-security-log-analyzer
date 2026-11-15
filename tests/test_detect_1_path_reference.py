@@ -1,8 +1,8 @@
-"""Frozen, internally authored challenge; measured limitations, not a GO oracle.
+"""Frozen internal labels with mixed reference semantics, not a syntax oracle.
 
-Reuse detector_accuracy for labels/parser gating/metrics. These tests deliberately
-retain measured mismatches; passing does not mean all challenge labels match.
-No production detector or held-out label is changed to improve the score.
+Reuse detector_accuracy for parser gating and arithmetic label agreement. Tests
+retain the original results without validating label semantics, RFC accuracy or
+a detection policy. No frozen label is changed to improve the score.
 """
 
 from dataclasses import asdict
@@ -61,7 +61,7 @@ def _summary(tmp_path, rows):
     ("validation", (1, 1, 2, 1), (2, 0)),
     ("combined", (3, 4, 3, 1), (2, 1)),
 ])
-def test_measured_reference_pattern_mismatches_are_not_hidden(frozen, tmp_path, subset, counts, excluded):
+def test_frozen_internal_label_agreement_counts_are_reproduced(frozen, tmp_path, subset, counts, excluded):
     freeze, rows = frozen
     selected = rows if subset == "combined" else tuple(row for row in rows if row["id"] in freeze["subsets"][subset])
     summary = _summary(tmp_path, selected)
@@ -72,7 +72,8 @@ def test_measured_reference_pattern_mismatches_are_not_hidden(frozen, tmp_path, 
         assert (metric["precision"], metric["recall"], metric["f1"]) == ("0.428571", "0.500000", "0.461538")
         assert metric["positive_support"] == 6 and metric["negative_support"] == 5
         assert len(summary["operational_false_alert_candidates"]) == 5
-        # A known benign documentation query remains a pattern TP, not a FP.
+        # Under the frozen labels this is a TP; context alone does not turn it
+        # into a FP. This reproduces the label table, not its semantic validity.
         documentation = next(row for row in summary["scenario_results"] if row["scenario_id"] == "detect1_d06_document_query")
         assert documentation["detected"] and documentation["behavioral_pattern"] == "PATTERN_PRESENT"
         assert not any(row.get("finding") == "DETECTOR_FALSE_POSITIVE" and row["scenario_id"] == documentation["scenario_id"] for row in summary["scenario_results"])
@@ -173,3 +174,44 @@ def test_new_evidence_does_not_relabel_or_replace_original_accuracy_corpus():
     assert original["scenario_count"] == 46
     assert all(row["fp"] == row["fn"] == row["excluded_parser"] == 0 for row in original["metrics"])
     assert len(original["operational_false_alert_candidates"]) == 7
+
+
+def test_p2_documented_scope_counts_and_exclusions_match_frozen_replay(frozen, tmp_path):
+    _, rows = frozen
+    summary = _summary(tmp_path, rows)
+    metric = next(item for item in summary["metrics"] if item["detector"] == "path_traversal")
+    document = (ROOT.parents[1] / "docs" / "detection_evaluation.md").read_text(encoding="utf-8")
+    section = document.split("## DETECT-1 —", 1)[1]
+    # These are reporting constraints, not assertions that any label is true.
+    assert "FROZEN_INTERNAL_LABEL_AGREEMENT_ONLY" in section
+    assert "RFC 3986 문법 정확도가 아닙니다." in section
+    assert "테스트 통과는 라벨의 의미적 타당성을 검증하지 않습니다." in section
+    expected_row = "| 전체 14개 | " + " | ".join(str(metric[key]) for key in ("tp", "fp", "fn", "tn"))
+    expected_row += f" | {metric['positive_support']} / {metric['negative_support']}"
+    expected_row += f" | {metric['excluded_undetermined']} / {metric['excluded_parser']}"
+    expected_row += " | " + " / ".join(metric[key] for key in ("precision", "recall", "f1")) + " |"
+    assert expected_row in section
+    exclusions = section.split("### 제외 분모와 v06/v07의 의미", 1)[1].split("### 지표 —", 1)[0]
+    documented = set()
+    for line in exclusions.splitlines():
+        cells = [value.strip() for value in line.split("|")[1:-1]]
+        if cells and cells[0].startswith("detect1_"):
+            documented.add((cells[0], cells[1]))
+    actual = {(item["scenario_id"], item["metric_disposition"]) for item in summary["scenario_results"]
+              if item.get("metric_disposition") in {"PARSER_EXCLUDED", "LABEL_UNDETERMINED"}}
+    assert documented == actual
+
+
+def test_p2_audit_documents_all_frozen_labels_without_reclassifying_them(frozen):
+    _, scenarios = frozen
+    document = (ROOT.parents[1] / "docs" / "detection_evaluation.md").read_text(encoding="utf-8")
+    audit = document.split("### 명제 A–E와 실제 fixture 감사", 1)[1].split("### 제외 분모와", 1)[0]
+    documented = {}
+    for line in audit.splitlines():
+        cells = [value.strip() for value in line.split("|")[1:-1]]
+        if cells and cells[0].startswith(("d0", "v0")):
+            assert len(cells) == 5 and cells[0] not in documented
+            documented[cells[0]] = cells[4]
+    expected = {item["id"].removeprefix("detect1_"):
+                f"{item['behavioral_pattern']} / {item['operational_context']}" for item in scenarios}
+    assert documented == expected

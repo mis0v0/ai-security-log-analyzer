@@ -144,7 +144,11 @@ Phase 9.1 로컬 웹 화면은 같은 Phase 9 분류기와 별도 privacy-safe �
 
 ## DETECT-1 — Path Traversal 참조 범위의 측정된 한계
 
-기준 main `88a5716b9332bd673ee0806429487bec3bca261c`, 확인일 2026-11-15. **Production 변경 없음, `DETECT_1_EVIDENCE_ONLY`**. 아래 수치는 보정 성능이 아니라 고정한 참조 기준과 현행 관찰 계약의 차이다. 회귀 테스트의 통과는 이 차이를 재현했다는 뜻이며 모든 라벨이 탐지 결과와 일치한다는 뜻이 아니다.
+기준 main `88a5716b9332bd673ee0806429487bec3bca261c`, 동결 evidence commit `5f3c26aa809a6b38e8349009c45dec9539ea6650`, 최초 확인일 2026-11-15, P2 의미 감사일 2026-11-16. **Production 변경 없음, 원 판정 `DETECT_1_EVIDENCE_ONLY` 유지**.
+
+**측정 범위: `FROZEN_INTERNAL_LABEL_AGREEMENT_ONLY` — 동결 내부 라벨과의 일치도입니다. RFC 3986 문법 정확도가 아닙니다. 테스트 통과는 라벨의 의미적 타당성을 검증하지 않습니다.**
+
+P2 감사 결과, 동결 라벨은 하나의 일관된 참조 명제를 따르지 않는다. Literal path 문법, 프로젝트 decoding/역슬래시 신호, query의 lexical 신호와 backend 해석의 불확실성이 섞여 있다. 아래 TP/FP/FN/TN과 precision/recall/F1은 이 **혼합 의미의 동결 라벨표에 대한 산술 재현값**으로만 보존한다. 라벨의 정답성, 현행 탐지 계약의 구현 정확도, RFC 적합성, 실제 공격 탐지율의 증거로 인용하지 않는다. 해시 목록의 기존 `label_scope` 문자열도 당시 metadata로 보존할 뿐 단일 oracle이 검증됐다는 뜻이 아니다.
 
 ### 기존 평가 감사와 선택 근거
 
@@ -154,38 +158,64 @@ Phase 9.1 로컬 웹 화면은 같은 Phase 9 분류기와 별도 privacy-safe �
 
 ### Research Basis와 관찰 필드 연결
 
-- RFC Editor, [RFC 3986 §3.3·§5.2.4](https://www.rfc-editor.org/rfc/rfc3986#section-3.3), 2005-01: 완전한 두 점 구성요소와 일반 이름의 일부를 구분하며 마지막 구성요소도 참조 해석에 포함한다. 이를 `HttpContext.path`의 참조 수준 라벨에 사용했다. RFC의 참조 해석은 실제 서버의 파일 접근이나 취약점을 입증하지 않는다.
-- OWASP, [Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal), 게시일 미표시·2026-11-15 확인: percent encoding·backslash 변형과 OS별 파일명 처리를 고려해야 한다. `http.path/query`를 제공하는 CLF와 승인 JSONL mapping을 비교하며 OS·Unicode 해석이 불명확한 두 사례는 미확정으로 제외했다. 실제 backend와 같은 decode/정규화를 한다고 가정하지 않는다.
+- RFC Editor, [RFC 3986 §3.3·§3.4·§5.2.4](https://www.rfc-editor.org/rfc/rfc3986#section-3.3), 2005-01, P2 재확인 2026-11-16: 완전한 두 점 path 구성요소와 일반 이름의 일부를 구분하며 마지막 구성요소도 참조 해석에 포함한다. Query는 별도의 비계층적 데이터다. Query 문자열을 path로 취급해 dot-segment 해석을 적용할 수 없다. 이 사실은 일부 동결 라벨의 근거이지만 라벨표 전체가 RFC oracle이라는 근거는 아니다.
+- OWASP, [Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal), 게시일 미표시·P2 재확인 2026-11-16: percent encoding·backslash 변형과 OS별 파일명 처리를 고려해야 한다. 이는 조사 신호와 backend 확인 필요성을 설명하며, RFC의 path 문법이나 이 fixture의 실제 서버 동작을 대신 정의하지 않는다.
 - MITRE, [CWE-22](https://cwe.mitre.org/data/definitions/22.html), v5.0 갱신 2026-10-28: 제한된 디렉터리 밖으로의 경로 해석이 약점의 핵심이다. 요청 필드·HTTP 상태만으로 실제 파일 접근이나 경계 이탈을 알 수 없으므로 성공·악의성 라벨을 만들지 않았다.
 
-연결은 **참조 문법 → 원 요청 URI·시각·IP·method/status → 기존 parser의 UTC-aware `NormalizedEvent.http.path/query` → 현행 반복 decoding과 부분 문자열 관찰**이다. 정상 이름 suffix의 alert와 마지막 부모 참조의 non-match를 분리한다. 현행 decoding·공개 Evidence·탐지 임계값·시간 창·Risk는 그대로이며 외부 표준의 공격 판정으로 포장하지 않는다.
+관찰 연결은 **원 요청 URI → parser가 분리한 `NormalizedEvent.http.path/query` → 현행 반복 `unquote`와 부분 문자열 관찰**이다. 이 pipeline의 결과와 동결 내부 라벨을 비교한다. 반복 percent-decoding은 프로젝트 처리이며 RFC의 literal 문법 판정과 같지 않다. Unicode folding이나 backend 파일 처리도 수행·검증하지 않는다. 현행 decoding·공개 Evidence·탐지 임계값·시간 창·Risk는 그대로다.
 
 ### 실행 전 고정한 14개
 
-`sample_logs/detect_1_path_reference/manifest.json`은 기존 정확도 manifest schema다. 각 라벨 근거에는 독립 판단과 기존 평가 대비 차이가 있고 운영 맥락은 별도다. CLF와 수동 선택 JSONL 표현을 함께 고정했다. 원본 target·IP·query를 평가 출력에 넣지 않는다.
+`sample_logs/detect_1_path_reference/manifest.json`은 기존 정확도 manifest schema다. CLF와 수동 선택 JSONL 표현, 라벨 근거와 운영 맥락을 함께 고정했다. 근거가 기록돼 있다는 사실과 그 근거가 하나의 명제로 일관되게 적용됐다는 평가는 구분한다. 원본 target·IP·query를 평가 출력에 넣지 않는다.
 
-| ID suffix (`detect1_` 접두사) | 관측 활동·기존 평가와의 차이 | 참조 패턴 | 운영 맥락 | Parser 기대 |
+### 명제 A–E와 실제 fixture 감사
+
+- **A — literal path 문법**: 원문 path를 slash로 분리했을 때 완전한 ASCII 두 점 구성요소가 있는가. Percent-decoding 전의 관찰이며 query는 포함하지 않는다. 이것은 RFC 전체 적합성 검사가 아니다.
+- **B — 프로젝트 신호**: 현행 반복 `unquote` 후 path 또는 query에 두 점과 slash/backslash의 부분 문자열이 있는가. 완전한 구성요소 경계를 요구하지 않으므로 A와 다르다.
+- **C — query lexical 신호**: query에 어떤 문자 신호가 있는가. 매개변수가 실제 파일 경로인지, RFC path 참조로 평가되는지 증명하지 않는다.
+- **D — backend 해석**: 서버·OS·라우트가 입력을 재작성하거나 파일 경로로 처리하는가. **모든 14개에서 검증되지 않았다.**
+- **E — 실제 의도·성공**: 실제 악의성·승인·exploit 성공인가. **모든 14개에서 입증되지 않았다.** 아래 운영 맥락은 내부 합성 설정이며 E의 ground truth가 아니다.
+
+두 표현의 실제 request 값과 parser의 path/query 분리를 읽어 확인했다. 다음 표의 A–C는 관찰 설명이며 **기존 라벨의 변경이나 승인표가 아니다**. d07은 입력 문자열을 읽을 수 있어도 calendar 오류로 pipeline에서 거부된다. 그 외 13개는 인식됐다.
+
+| ID suffix (`detect1_` 접두사) | A: literal path 부모 구성요소 | B: 프로젝트 신호 | C: query 관찰 | 동결 label / 합성 맥락 |
 | --- | --- | --- | --- | --- |
-| d01_named_dot_suffix | 두 점으로 끝나는 일반 이름 뒤 구분자 | 없음 | 합성 정상 | 인식 |
-| d02_named_three_dots | 세 점 suffix의 일반 이름 뒤 구분자 | 없음 | 합성 정상 | 인식 |
-| d03_encoded_named_suffix | percent-encoded 일반 이름 suffix | 없음 | 합성 정상 | 인식 |
-| d04_parent_with_leaf | 완전한 부모 구성요소 뒤 leaf; d05 대조 | 있음 | 합성 probe | 인식 |
-| d05_terminal_parent | leaf 없는 마지막 부모 구성요소 | 있음 | 합성 probe | 인식 |
-| d06_document_query | 문서 맥락의 명시적 상대 참조; nullable metadata 매핑 대조 | 있음 | 합성 정상 | 인식 |
-| d07_invalid_calendar | 잘못된 calendar; parser 제외 대조 | 있음 | 미검증 | 거부 |
-| v01_encoded_named_component | 별도 encoded suffix·IPv6 검증 | 없음 | 합성 정상 | 인식 |
-| v02_encoded_terminal_parent | percent-encoded 마지막 부모 구성요소 | 있음 | 미검증 | 인식 |
-| v03_terminal_parent_with_query | 별도 일반 query와 마지막 부모 path 분리 | 있음 | 합성 probe | 인식 |
-| v04_backslash_query | 혼합 구분자·HTTP 500·JSONL 전달 대조 | 있음 | 모호 | 인식 |
-| v05_current_directory | 단일 점 구성요소·IPv6 음성 대조 | 없음 | 합성 정상 | 인식 |
-| v06_bare_dot_run | 이름 없는 더 긴 점 열의 OS 해석 부족 | 미확정 | 모호 | 인식 |
-| v07_unicode_dot_alias | Unicode folding·파일 처리 관측 없음 | 미확정 | 미검증 | 인식 |
+| d01_named_dot_suffix | 없음; 일반 이름의 두 점 suffix | 있음; suffix 부분 문자열 | query 없음 | PATTERN_ABSENT / KNOWN_BENIGN |
+| d02_named_three_dots | 없음; 일반 이름의 세 점 suffix | 있음; suffix 부분 문자열 | query 없음 | PATTERN_ABSENT / KNOWN_BENIGN |
+| d03_encoded_named_suffix | 없음; percent-encoded 이름 suffix | 있음; decoding 뒤 이름 suffix | query 없음 | PATTERN_ABSENT / KNOWN_BENIGN |
+| d04_parent_with_leaf | 있음; 부모 구성요소 뒤 leaf | 있음 | query 없음 | PATTERN_PRESENT / SIMULATED_ATTACK |
+| d05_terminal_parent | 있음; 마지막 부모 구성요소 | 없음; 뒤 구분자 없음 | query 없음 | PATTERN_PRESENT / SIMULATED_ATTACK |
+| d06_document_query | 없음 | 있음; query에서 일치 | ASCII 상대 참조 문자 신호 | PATTERN_PRESENT / KNOWN_BENIGN |
+| d07_invalid_calendar | 입력에는 있음 | 입력에는 신호가 있지만 분석 제외 | query 없음 | PATTERN_PRESENT / UNVERIFIED |
+| v01_encoded_named_component | 없음; percent-encoded 이름 suffix | 있음; decoding 뒤 이름 suffix | query 없음 | PATTERN_ABSENT / KNOWN_BENIGN |
+| v02_encoded_terminal_parent | literal 두 점 없음 | 없음; decoding 후 마지막 두 점만 남음 | query 없음 | PATTERN_PRESENT / UNVERIFIED |
+| v03_terminal_parent_with_query | 있음; 마지막 부모 구성요소 | 없음 | 일반 query; 부모 참조 토큰 없음 | PATTERN_PRESENT / SIMULATED_ATTACK |
+| v04_backslash_query | 없음 | 있음; decoding 뒤 query에서 일치 | encoded 역슬래시·혼합 구분자 | PATTERN_PRESENT / AMBIGUOUS |
+| v05_current_directory | 없음; 한 점 구성요소 | 없음 | query 없음 | PATTERN_ABSENT / KNOWN_BENIGN |
+| v06_bare_dot_run | 없음; path의 3점 구성요소 | 있음; 그 안의 부분 문자열 | query 없음 | PATTERN_UNDETERMINED / AMBIGUOUS |
+| v07_unicode_dot_alias | 없음; 해당 문자는 path에 없음 | 없음; ASCII 토큰으로 folding하지 않음 | percent-decoding 후 U+FF0E 두 개와 slash | PATTERN_UNDETERMINED / UNVERIFIED |
 
 필수 telemetry는 시각·관측 IP·HTTP method·원 path·status, query 사례는 query도 포함한다. JSONL의 키는 고정 승인 mapping으로 연결하며 protocol·response size를 만들지 않는다. 두 표현의 공통 정규화 필드를 먼저 비교하고, 그 뒤 기존 pipeline의 탐지·실제 evidence(없는 response size 제외)·관계·위험도를 비교한다. **14개 논리 사례이며 28개 독립 표본이 아니다.** 모든 자료·라벨은 이번 개발 과정에서 내부 구성한 비민감 합성 자료다. 독립 인간 검토나 실제 운영 ground truth가 아니다.
 
 최초 후보 실행 전 manifest SHA-256은 `040c3d2f394c50d985ee158ef7337c0bc7a8c314e5f2d75c3a032c2fbb8c61cd`, 전체 fixture·manifest hash 목록 SHA-256은 `c95f142b87ae8686cbcd2c3277736f3657c73286a3ee40b30a7d5f459e2a659b`로 고정했다. Hash 목록 자체의 digest는 테스트에 별도로 고정하며 재봉인으로 라벨을 바꾸지 않는다. 개발 7개 실행 후 Production을 변경하지 않기로 결정하고 나머지 검증 7개를 처음 실행했다.
 
-### 측정 결과와 변경하지 않은 이유
+### 제외 분모와 v06/v07의 의미
+
+| 제외 ID | 기존 evaluator 분류 | 보존하는 이유 |
+| --- | --- | --- |
+| detect1_d07_invalid_calendar | PARSER_EXCLUDED | calendar 오류로 거부된 입력은 detector 음성으로 세지 않음 |
+| detect1_v06_bare_dot_run | LABEL_UNDETERMINED | backend의 dot 처리 정보 부족이라는 원 동결 판단을 보존 |
+| detect1_v07_unicode_dot_alias | LABEL_UNDETERMINED | query의 Unicode folding·파일 처리 정보 부족이라는 원 동결 판단을 보존 |
+
+v06은 literal path의 3점 구성요소다. A에서는 완전한 두 점 구성요소가 없고, B에서는 그 일부가 부분 문자열 검사에 일치한다. 원래 미확정 판단은 **D의 불확실성**을 이유로 했다. 이 이유는 순수한 A 문법의 존재 여부를 미확정으로 만들지는 않는다.
+
+v07의 전각 마침표 두 개는 **path가 아니라 query 값**을 percent-decode한 뒤 나타난다. 현행 처리는 이를 ASCII 두 점으로 Unicode folding하지 않는다. 원래 미확정 판단은 이 query가 backend에서 어떻게 처리되는지 모른다는 **C→D 해석 공백** 때문이었다. RFC path 문법의 불확실성이라고 설명할 수 없으며, query에 path의 dot-segment 규칙을 적용해서도 안 된다.
+
+따라서 두 제외는 **당시 동결 내부 라벨표의 제외 규칙**으로 재현할 수 있지만, A만을 일관되게 평가한 제외 기준으로 정당화할 수 없다. 반대로 D를 명제로 삼으면 다른 12개도 backend ground truth가 없다. 두 라벨을 사후에 양성/음성으로 재분류하거나 분모를 다시 계산하지 않았다. d01/d02/d03/v01의 이름 suffix 판단, d06/v04의 query 신호, v02의 decoding 뒤 마지막 구성요소 판단도 A 하나로 동일시하지 않는다.
+
+### 지표 — 동결 내부 라벨과의 일치도만 재현
+
+14개 중 동결 양성 6개·음성 5개가 점수 분모 11개를 구성한다. 미확정 2개와 parser 거부 1개는 위와 같이 제외한다. 기존 evaluator의 TP/FP/FN/TN 및 precision/recall/F1 명칭을 유지하되, 이 표에서는 혼합 의미의 내부 라벨에 대한 일치/불일치 분류만 뜻한다.
 
 | 범위 | TP | FP | FN | TN | 양성/음성 support | 미확정/parser 제외 | precision / recall / F1 |
 | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
@@ -193,8 +223,16 @@ Phase 9.1 로컬 웹 화면은 같은 Phase 9 분류기와 별도 privacy-safe �
 | 별도 검증 7개 | 1 | 1 | 2 | 1 | 3 / 2 | 2 / 0 | 0.500000 / 0.333333 / 0.400000 |
 | 전체 14개 | 3 | 4 | 3 | 1 | 6 / 5 | 2 / 1 | 0.428571 / 0.500000 / 0.461538 |
 
-CLF와 JSONL mapping의 공통 event 사실 및 해당 결과가 일치했다. Parser 거부 1개와 의미 미확정 2개를 TN으로 세지 않았다. 운영 false-alert 후보 5개 중 문서 query는 패턴 TP다. 나머지 4개는 새 **부모 참조 기준에 한정한** FP이며, 기존 부분 문자열 계약에서는 문자열이 실제로 존재한다. 마지막 부모 구성요소 3개는 새 기준의 FN이고 실제 파일 접근·공격 성공의 누락을 뜻하지 않는다. 따라서 이 수치와 기존 좁은 46개 평가의 1.0은 같은 모집단·같은 명제를 측정하지 않는다.
+CLF와 JSONL mapping의 공통 event 사실 및 해당 결과가 일치했다. 동결 라벨상 양성인데 non-match인 3개와 음성인데 match인 4개가 위 FN/FP 칸에 들어간다. 이는 단일하게 검증된 부모 참조 정의의 FP/FN이나 현행 substring 계약의 구현 결함을 확정하지 않는다. 운영 false-alert 후보 5개 중 문서 query는 동결 라벨상 TP다. 실제 파일 접근·공격 성공·악의성의 오탐/미탐으로 해석하지 않는다. 기존 46개 평가와 이 표는 같은 모집단·같은 명제를 측정하지 않는다.
 
-Production 보정을 하지 않았다. 현행 API adapter는 `path_pattern`을 두 구분자 패턴으로 제한한다. 마지막 구성요소를 탐지했다고 하면서 관측되지 않은 뒤 구분자를 만들어 넣거나 이 계약을 넓힐 수 없다. 반대로 광범위한 dot/Unicode 표현을 정상으로 억제하려면 이 로그에 없는 backend 정규화·파일 처리 근거가 필요하다. 이번 라벨로 점수를 올리기 위해 기존 탐지 명제를 조용히 교체하지 않았다. 결과는 보정 전후 동일하며 Production RED/GREEN은 해당하지 않는다.
+재사용 evaluator의 `synthetic_detector_pattern_accuracy` 및 `DETECTOR_FALSE_POSITIVE/NEGATIVE` 같은 출력 이름에는 이 P2 범위가 자동으로 들어가지 않는다. DETECT-1 결과를 인용할 때는 반드시 **동결 내부 라벨 일치도, 혼합 의미, 위 세 제외 규칙**을 함께 제시해야 한다. Raw summary나 숫자만으로 RFC 정확도·정책 타당성을 주장할 수 없다.
 
-회귀는 고정 hash·측정된 불일치·정규화 동등성·제외 분모·개인정보 경계를 보호한다. 새 framework/CLI는 없으며 `uv run pytest -q tests/test_detect_1_path_reference.py`로 재현한다. 실제 운영 정확도, 승인 활동의 오탐률, 서버 취약 여부·파일 접근 성공·로그 진위는 계속 미검증이다. 추가로 필요한 근거는 proxy/backend의 target 재작성·정규화 설정, 라우트 처리와 파일 접근 기록, 승인 활동 맥락이다. Snapshot payload·source pin·개인정보 공개 계약·기존 46/79/21 및 S1 HOLD·운영 NO_GO는 바꾸지 않는다.
+Production 보정을 하지 않았다. 현행 API adapter는 `path_pattern`을 두 구분자 패턴으로 제한한다. 관측되지 않은 뒤 구분자를 만들거나 mixed label 점수를 올리기 위해 공개 Evidence·탐지 명제를 바꾸지 않았다. Backend 정규화·파일 처리의 불확실성을 A 문법이나 E의 안전 판정으로 전환하지 않는다. 결과는 동일하며 Production RED/GREEN은 해당하지 않는다.
+
+### 별도 버전 감사가 필요한 범위와 PR 통합 한계
+
+이번 P2에서 새 metric·라벨·corpus는 만들지 않는다. 단일 RFC 문법 또는 명시적으로 정한 decoding 정책의 지표가 필요하다면 **14개 전부**를 별도 버전의 동일한 명제로 감사해야 한다. 우선 확인 대상은 제외 의미가 섞인 v06/v07, query 범위인 d06/v04/v07, percent-decoding 범위인 d03/v01/v02, parser 단위인 d07이다. 나머지 대조 사례도 새 명제와 동일하게 평가해야 한다. 이 요구는 원 동결 라벨의 타당성 승인이나 사후 재분류가 아니다.
+
+P2 판정은 `DETECT_1_P2_DOCUMENTED_LIMITATION`이다. PR은 **동결 자료·기존 동작의 특성 기록·방법론적 한계 공개** 범위로 통합할 수 있다. 단일한 참조 기준의 정확도 검증, 탐지 보정 완료, 라벨 정책 승인 또는 운영 GO로 소개할 수 없다. PR 설명의 Findings에도 지표가 혼합 의미의 동결 라벨표와의 일치도라는 점을 포함해야 한다.
+
+회귀는 고정 hash·현재 결과 재현·정규화 동등성·문서의 측정 범위와 제외 분모·개인정보 경계를 보호한다. 라벨의 의미적 정답성을 assert하지 않는다. 새 framework/CLI는 없으며 `uv run pytest -q tests/test_detect_1_path_reference.py`로 재현한다. 실제 운영 정확도, 승인 활동의 오탐률, 서버 취약 여부·파일 접근 성공·로그 진위는 계속 미검증이다. 추가로 필요한 근거는 proxy/backend의 target 재작성·정규화 설정, 라우트 처리와 파일 접근 기록, 승인 활동 맥락이다. Snapshot payload·source pin·개인정보 공개 계약·기존 46/79/21 및 S1 HOLD·운영 NO_GO는 바꾸지 않는다.
