@@ -1,6 +1,7 @@
 import ipaddress
+import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from app.models.schemas import HttpContext, NormalizedEvent
@@ -17,6 +18,91 @@ _STATUS_SIZE = re.compile(r"(?P<status>[0-9]{3}) +(?P<size>[0-9]+|-)")
 _METHOD = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")
 _PROTOCOL = re.compile(r"HTTP/[0-9](?:\.[0-9])?\Z")
 _HEX = frozenset("0123456789abcdefABCDEF")
+_NGINX_JSON_PROFILE = "asla-nginx-access-v1"
+_NGINX_JSON_FIELDS = {
+    "profile", "time_iso8601", "remote_addr", "request_method", "request_uri",
+    "server_protocol", "status", "body_bytes_sent",
+}
+_NGINX_ISO_TIME = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"[+-][0-9]{2}:[0-9]{2}\Z"
+)
+
+
+def _json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Ambiguous JSON object.") from None
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value):
+    raise ValueError("Unsupported JSON constant.") from None
+
+
+def _parse_nginx_json(line):
+    # Unknown, malformed and ambiguous JSON retains the existing non-event
+    # disposition. Only an unambiguous, explicitly identified object is read.
+    try:
+        if len(line.encode("utf-8", "strict")) > 8192:
+            return None
+        row = json.loads(line, object_pairs_hook=_json_object, parse_constant=_reject_json_constant)
+    except (ValueError, UnicodeError, RecursionError):
+        return None
+    if type(row) is not dict or row.get("profile") != _NGINX_JSON_PROFILE:
+        return None
+    if set(row) != _NGINX_JSON_FIELDS or any(
+        type(row[key]) is not str
+        for key in _NGINX_JSON_FIELDS - {"status", "body_bytes_sent"}
+    ):
+        raise ValueError("Unsupported access JSON profile fields.") from None
+
+    time_text = row["time_iso8601"]
+    if (_NGINX_ISO_TIME.fullmatch(time_text) is None
+            or time_text.endswith("-00:00")
+            or int(time_text[-5:-3]) > 23 or int(time_text[-2:]) > 59):
+        raise ValueError("Invalid access timestamp format.") from None
+    try:
+        timestamp = datetime.fromisoformat(time_text).astimezone(timezone.utc)
+    except (ValueError, OverflowError):
+        raise ValueError("Invalid access timestamp.") from None
+
+    address_text = row["remote_addr"]
+    try:
+        address = ipaddress.ip_address(address_text)
+    except ValueError:
+        raise ValueError("Invalid access source address.") from None
+    if isinstance(address, ipaddress.IPv6Address) and address.scope_id is not None:
+        raise ValueError("Invalid access source address.") from None
+    status = row["status"]
+    size = row["body_bytes_sent"]
+    if type(status) is not int or not 100 <= status <= 599:
+        raise ValueError("Invalid access status.") from None
+    if type(size) is not int or not 0 <= size <= 2**63 - 1:
+        raise ValueError("Invalid access response size.") from None
+    method, protocol, target = row["request_method"], row["server_protocol"], row["request_uri"]
+    if (_METHOD.fullmatch(method) is None
+            or protocol not in {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0"}):
+        raise ValueError("Unsupported access request syntax.") from None
+    if (not target.startswith("/") or len(target) > 2048 or "#" in target
+            or any(ord(char) <= 32 or ord(char) == 127 for char in target)):
+        raise ValueError("Unsupported access request target.") from None
+    try:
+        target.encode("utf-8", "strict")
+    except UnicodeError:
+        raise ValueError("Unsupported access request target.") from None
+    # $request_uri is the original target, not $uri. JSON decoding happens
+    # exactly once; percent escapes and a leading // remain observable data.
+    path, _, query = target.partition("?")
+    return NormalizedEvent(
+        timestamp=timestamp, event_type="http_request", source="access_log",
+        user=None, src_ip=address_text, dst_ip=None, application=None,
+        protocol=protocol, user_agent=None, raw=line,
+        http=HttpContext(method=method, path=path, status_code=status,
+                         response_size=size, query=query or None),
+    )
 
 
 def _read_quoted(line: str, start: int) -> tuple[str, int] | None:
@@ -88,7 +174,7 @@ def _decode_token(value: str) -> bool:
 
 
 def parse_access_log(line, timezone=None):
-    """Parse the bounded Apache CLF/Combined and Nginx default combined profiles.
+    """Parse bounded CLF/Combined and the explicit asla-nginx-access-v1 profile.
 
     ``timezone`` is intentionally unused: the access timestamp must carry its own
     numeric UTC offset. Referer is syntax-checked and discarded; User-Agent is
@@ -104,9 +190,8 @@ def parse_access_log(line, timezone=None):
         ord(character) < 32 or ord(character) == 127 for character in line
     ):
         return None
-    if line.startswith("{"):
-        # Keep the existing JSON-custom profile disposition as a non-event.
-        return None
+    if line.lstrip(" ").startswith("{"):
+        return _parse_nginx_json(line)
 
     prefix = _PREFIX.match(line)
     if prefix is None:

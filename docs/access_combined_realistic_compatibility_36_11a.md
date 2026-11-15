@@ -128,3 +128,44 @@ Parser와 API preflight 수용 여부는 기대 라벨과 일치했다. 잘못�
 ## 15. 최종 판정
 
 `PHASE_36_11A_ACCESS_COMBINED_COMPATIBILITY_LOCAL_CONDITIONAL_GO`는 모든 필수 regression이 성공한 경우에만 적용한다. Production 범위는 Parser 호환성으로 한정하며 detector threshold/분석 의미는 바꾸지 않았다.
+
+## 16. REAL-LOG-2 Nginx JSON 프로파일
+
+기존 CLF/Combined를 유지하고 `access` 역할에 고정 ID `asla-nginx-access-v1`인 JSON object 하나만 추가한다. Nginx에 범용 JSON 스키마가 있다고 가정하지 않는다. 다음 설정은 `http` context에 놓는 이 프로파일의 생성 설정이며 새 수집 시스템이 아니다. 출력 원문은 민감한 자료일 수 있으므로 공개하지 않는다.
+
+```nginx
+log_format asla_access_v1 escape=json
+    '{"profile":"asla-nginx-access-v1",'
+    '"time_iso8601":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"request_method":"$request_method",'
+    '"request_uri":"$request_uri",'
+    '"server_protocol":"$server_protocol",'
+    '"status":$status,"body_bytes_sent":$body_bytes_sent}';
+access_log /path/to/access-v1.jsonl asla_access_v1;
+```
+
+정확히 다음 8개 필드가 필수다. 키 순서는 무관하며 extra field와 중복 키는 허용하지 않는다. Profile 식별자는 로그의 출처나 무변조를 인증하지 않는다.
+
+| 필드 | JSON 타입과 지원 조건 | 기존 내부 매핑 |
+|---|---|---|
+| `profile` | string, 정확히 `asla-nginx-access-v1` | 형식 선택만 수행 |
+| `time_iso8601` | string, `YYYY-MM-DDTHH:MM:SS±HH:MM`, 유효한 날짜·숫자 offset | UTC-aware `timestamp` |
+| `remote_addr` | string, IPv4/IPv6 literal, zone ID 없음 | `src_ip` |
+| `request_method` | string, 비어 있지 않은 HTTP token | `http.method` |
+| `request_uri` | string, `/`로 시작하는 origin-form, 최대 2048자, literal space/control/DEL/fragment/surrogate 없음 | 첫 `?`에서만 나눈 `http.path`와 `http.query` |
+| `server_protocol` | string, `HTTP/1.0`, `HTTP/1.1`, `HTTP/2.0`, `HTTP/3.0` | `protocol` |
+| `status` | integer 100–599, bool/float/string 불허 | `http.status_code` |
+| `body_bytes_sent` | integer 0–2^63−1, bool/float/string 불허 | `http.response_size` |
+
+공식 근거 확인일은 2026-11-15다. [Nginx log module](https://nginx.org/en/docs/http/ngx_http_log_module.html)은 format을 사용자가 정의함과 `escape=json`(1.11.8+)의 quote/backslash/control escaping을 정의한다. JSON string은 한 번만 해제하며 Nginx default `\xXX` decoding을 다시 적용하지 않는다. [Core variables](https://nginx.org/en/docs/http/ngx_http_core_module.html#variables)의 `$request_uri`는 arguments를 포함한 원 요청 URI이고 `$uri`는 정규화되며 처리 중 바뀔 수 있으므로 서로 대체하지 않는다. `$remote_addr`는 기록된 client address이며 proxy 뒤의 최종 사용자 신원을 증명하지 않는다. `$body_bytes_sent`는 응답 header를 제외한 바이트 수다. [Nginx 1.28.0 시각 생성 코드](https://github.com/nginx/nginx/blob/release-1.28.0/src/core/ngx_times.c)는 초 단위 숫자 offset 표기의 구현 근거다. 최신 문서에는 페이지 갱신일이 명시되지 않아 버전 고정 코드와 구분했다.
+
+숫자 필드 두 개를 설정에서 인용하면 string이 되어 이 프로파일과 다르다. `Z`, `-00:00`, 시간대 결손, fraction 및 `$time_iso8601_ms`, absolute/authority/asterisk request target, 임의 JSON·다른 ID·추가 필드·nested 필드, 기본 `\xXX` escaping은 지원하지 않는다. JSON 한 행은 최대 8192 UTF-8 bytes다. 기존 로컬 입력/Live의 2048-byte 행 제한도 그대로 적용된다. 이 수치와 64-bit size 제한은 프로젝트의 bounded profile 제한이며 Nginx 전체의 한계가 아니다.
+
+식별되지 않은 JSON과 문법 오류·중복 키·비유한 수·decoder 자원 초과로 모호한 JSON은 기존 `None` 비이벤트 처리를 유지한다. 명확히 식별한 프로파일의 필드 오류는 원문을 포함하지 않는 고정 ValueError로 거부한다. 두 경우 모두 입력 API preflight는 유효 이벤트로 수용하지 않는다. 데이터나 현재 시각으로 누락 필드를 보정하지 않는다.
+
+`request_uri`의 percent encoding과 `+`, quote/backslash, 선행 `//`는 관찰값대로 유지한다. URL decoding 및 공격 형태 판정은 기존 Detector가 수행한다. Method 대소문자도 바꾸지 않는다. 기존 웹 Detector의 method/target/decoding 범위를 넘는 입력을 모든 규칙이 평가했다고 주장하지 않는다. Pattern 관찰은 HTTP 200 여부와 무관하며 공격 성공·유출·의도를 뜻하지 않는다. Detector/Correlation/Risk/공개 Evidence/API/UI schema는 변경하지 않는다.
+
+별도 합성 입력은 `tests/fixtures/nginx_json_access_v1.log`다. 정상 요청, query/URL encoding, JSON quote/backslash, IPv4/IPv6, 200/404/500, Traversal/SQLi/XSS-like와 정상 경계를 Parser→UTC→기존 분석→공개 projection으로 검증한다. 비교 가능한 7개 기록은 기존 CLF 표현의 전체 분석과 비교하며, 선행 `//`는 기존 CLF의 urlsplit 의미를 바꾸지 않고 새 프로파일의 정확한 보존을 별도로 확인한다. Snapshot은 기존 producer의 전체 bytes 불변을 재검증한 뒤 Access Parser source pin 한 개만 갱신한다. Corpus/Label/Snapshot payload·정책과 S1 구현은 변경하지 않는다.
+
+`FORMAT_SUPPORTED_BY_IMPLEMENTATION` · `SYNTHETIC_COMPATIBILITY_TESTED` · **`PRODUCER_OUTPUT_NOT_TESTED`**. 호스트와 확인한 로컬 캐시에 사용 가능한 Nginx를 찾지 못했으며 실제 Nginx HTTP 요청·직렬화·설정 실행을 검증하지 않았다. 합성 fixture를 실제 출력이라고 주장하지 않는다. 실제 배포판·proxy topology·조직 로그·탐지율과 운영 승인은 미검증이며 운영 `NO_GO`와 S1 HOLD를 유지한다.
