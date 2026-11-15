@@ -86,7 +86,7 @@ _SOURCE_VERSION_PINS = (
     (('app', 'loader'), 'linux_audit_loader.py', 'f2f2f54d7f592dcc705a56c8d0852d2a3051491566901675b79e531df956b59a'),
     (('app',), 'main.py', 'd66ed992159a3f5e6770c9338dd23be2b15585be58c3b4d43ef734071e78f69c'),
     (('app', 'models'), 'schemas.py', '1cfee6ecb055001a63487ffc7a628130f4ef2972aba0fe8aaf32f8ac9993b6ce'),
-    (('app', 'parser'), 'access_log.py', 'e33284367d23b96eaddd0cf3ea0cf91ce864c53ca327fe1c2831d1f32ee50e5b'),
+    (('app', 'parser'), 'access_log.py', '1aaf427dfc212207ea3f7ab3e1b75738df0ebdd02fd20e9869b61b3bd5ffe3a2'),
     (('app', 'parser'), 'auth_log.py', 'a6360da532cfc98e02faaa70a6b45b1795d27ad202b3f43f41fa3e33d59b1132'),
     (('app', 'parser'), 'linux_audit.py', '73a873991fc497c4488994327f2757cd797fb7f45497840e4b4c04edadb45a72'),
     (('app', 'parser'), 'registry.py', 'b670de3e785fb375108dc9309426363588c5879ce1466e65dfb5651f8104c65b'),
