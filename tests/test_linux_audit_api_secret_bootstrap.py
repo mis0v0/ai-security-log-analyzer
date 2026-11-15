@@ -471,6 +471,7 @@ def test_explicit_path_ignores_environment_and_integration_stays_disabled(
         "/api/v1/investigations/linux-audit",
         "/api/v1/investigations/guidance",
         "/api/v1/investigations/checklist", "/api/v1/investigations/text",
+        "/api/v1/investigations/json-mapping",
     }
     assert "securitySchemes" not in api_module.app.openapi().get(
         "components", {}

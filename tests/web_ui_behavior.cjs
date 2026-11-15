@@ -10,6 +10,7 @@ const script = fs.readFileSync("frontend/app.js", "utf8").replace(
   "$1\n",
 );
 const qualityUiScript = fs.readFileSync("frontend/input-quality-ui-36-12b.js", "utf8");
+const mappingUiScript = fs.readFileSync("frontend/json-access-mapping.js", "utf8");
 const reviewQueueUiScript = fs.readFileSync("frontend/review-queue-ui-36-13a.js", "utf8");
 const supplied = JSON.parse(fs.readFileSync(0, "utf8"));
 const input = supplied.sample || supplied;
@@ -66,6 +67,10 @@ const ids = [
   "file-input-panel", "text-input-panel", "text-source", "log-text", "text-help", "text-error",
   "text-byte-count", "text-line-count", "text-clear", "text-input-scope-notice", "text-input-source-label",
   "nav-start", "nav-audit", "nav-live", "nav-results"
+  ,"input-mode-mapping", "json-mapping-panel", "json-mapping-text", "json-mapping-discover",
+  "json-mapping-clear", "json-mapping-fields", "json-mapping-confirm", "json-mapping-preview",
+  "json-mapping-error", "json-mapping-status", "json-mapping-result-notice", "json-map-timestamp",
+  "json-map-source-ip", "json-map-method", "json-map-request-uri", "json-map-status"
   ,"local-action-card", "audit-action-card", "audit-choice-button", "linux-audit-file",
   "workspace-current-title", "workspace-current-description"
   ,"input-quality-summary-36-12b", "error-input-quality-36-12b"
@@ -188,6 +193,7 @@ function makeApp(initial, hostname = "127.0.0.1") {
       setTimeout, clearTimeout},
     TextDecoder, TextEncoder, Uint8Array, Date, Blob, URL: objectUrl};
   vm.runInNewContext(qualityUiScript, context);
+  vm.runInNewContext(mappingUiScript, context);
   vm.runInNewContext(reviewQueueUiScript, context);
   vm.runInNewContext(script, context);
   return {

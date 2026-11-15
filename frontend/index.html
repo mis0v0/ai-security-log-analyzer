@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/input-quality-ui-36-12b.js" defer></script>
   <script src="/assets/review-queue-ui-36-13a.js" defer></script>
+  <script src="/assets/json-access-mapping.js" defer></script>
   <script src="/assets/app.js" type="module"></script>
   <script src="/assets/linux-audit.js" defer></script>
   <script src="/assets/live-monitoring.js" defer></script>
@@ -246,6 +247,7 @@
           <legend>입력 방식</legend>
           <label for="input-mode-file"><input id="input-mode-file" name="input_mode" type="radio" value="file" checked> 파일 업로드</label>
           <label for="input-mode-text"><input id="input-mode-text" name="input_mode" type="radio" value="text"> 텍스트 직접 입력</label>
+          <label for="input-mode-mapping"><input id="input-mode-mapping" name="input_mode" type="radio" value="mapping"> JSON 필드 매핑</label>
         </fieldset>
         <fieldset id="file-input-panel">
           <legend>분석할 로그 선택 — 세 파일 모두 필수</legend>
@@ -291,6 +293,36 @@
           <div class="text-input-actions">
             <button id="text-clear" type="button">입력 지우기</button>
           </div>
+        </section>
+        <section id="json-mapping-panel" class="text-input-panel" aria-labelledby="json-mapping-heading" hidden>
+          <h3 id="json-mapping-heading">기존 JSONL 웹 접근 로그 분석</h3>
+          <p>로그를 붙여넣고 필드 이름을 확인한 뒤, 다섯 항목을 직접 연결하세요. Nginx 설정 변경이나 수동 파일 변환은 필요하지 않습니다.</p>
+          <label for="json-mapping-text">JSONL 로그 내용</label>
+          <textarea id="json-mapping-text" rows="10" spellcheck="false" autocomplete="off"
+            aria-describedby="json-mapping-help json-mapping-error"
+            placeholder="한 줄에 평평한 JSON 객체 하나를 붙여넣으세요."></textarea>
+          <p id="json-mapping-help">UTF-8 32 KiB, 512줄, 한 줄 2048바이트 이하입니다. 필드 이름 확인은 브라우저 안에서만 처리하며 값은 미리보기하지 않습니다. 중첩 객체·배열은 지원하지 않습니다.</p>
+          <div class="text-input-actions">
+            <button id="json-mapping-discover" type="button">필드 이름 확인</button>
+            <button id="json-mapping-clear" class="secondary-button" type="button">입력 지우기</button>
+          </div>
+          <p id="json-mapping-status" role="status" aria-live="polite">아직 확인한 필드가 없습니다.</p>
+          <fieldset id="json-mapping-fields" aria-describedby="json-mapping-semantics json-mapping-error" disabled>
+            <legend>사용할 다섯 필드 직접 선택</legend>
+            <div class="json-mapping-grid">
+              <div><label for="json-map-timestamp">이벤트 시각</label><select id="json-map-timestamp" aria-describedby="json-mapping-semantics json-mapping-error"><option value="">필드를 선택하세요</option></select></div>
+              <div><label for="json-map-source-ip">관측된 출발지 IP</label><select id="json-map-source-ip" aria-describedby="json-mapping-semantics json-mapping-error"><option value="">필드를 선택하세요</option></select></div>
+              <div><label for="json-map-method">HTTP 메서드</label><select id="json-map-method" aria-describedby="json-mapping-semantics json-mapping-error"><option value="">필드를 선택하세요</option></select></div>
+              <div><label for="json-map-request-uri">원 요청 URI (path와 query 포함)</label><select id="json-map-request-uri" aria-describedby="json-mapping-semantics json-mapping-error"><option value="">필드를 선택하세요</option></select></div>
+              <div><label for="json-map-status">HTTP 응답 상태</label><select id="json-map-status" aria-describedby="json-mapping-semantics json-mapping-error"><option value="">필드를 선택하세요</option></select></div>
+            </div>
+          </fieldset>
+          <p id="json-mapping-semantics">시각에는 Z 또는 UTC offset이 필요합니다. 출발지는 IP 주소, 메서드는 HTTP token, URI는 /로 시작하는 원 요청 대상, 상태는 100–599 정수여야 합니다. 전달 헤더를 실제 사용자 IP로 자동 신뢰하지 않습니다. 없는 프로토콜·응답 크기는 추정하지 않습니다.</p>
+          <ul id="json-mapping-preview" class="json-mapping-preview" aria-label="선택한 필드 연결"></ul>
+          <p class="local-warning">필드 이름을 연결해도 그 값의 실제 의미나 로그의 진위가 검증되는 것은 아닙니다.</p>
+          <label class="json-mapping-confirm"><input id="json-mapping-confirm" type="checkbox" disabled aria-describedby="json-mapping-error"> 위 다섯 필드의 연결을 확인했으며, 이 연결을 전제로 분석을 요청합니다.</label>
+          <p id="json-mapping-error" class="field-error" role="alert" tabindex="-1" hidden></p>
+          <p>확인 후 분석을 요청할 때만 이 로컬 서버로 전송합니다. 서버가 모든 줄을 다시 검증하며 한 줄이라도 맞지 않으면 전체 요청을 거부합니다. 입력과 연결은 영구 저장하지 않으며 분석 처리 후 화면에서 지웁니다.</p>
         </section>
         <button id="local-button" type="submit">실제 로그 분석하기</button>
       </form>
@@ -356,6 +388,7 @@
       <div id="results-dashboard" class="workspace-dashboard-36-6c">
       <h2 id="results-heading">분석 결과</h2>
       <p id="result-context" class="result-notice"><strong>예시 데이터 결과입니다.</strong> 실제 조직 환경이나 사용자의 보안 상태를 나타내지 않습니다.</p>
+      <p id="json-mapping-result-notice" class="local-warning" hidden>사용자가 연결한 필드의 값을 전제로 계산한 결과입니다. 필드의 실제 의미·로그 진위·출발지의 신원을 검증한 것은 아닙니다.</p>
       <aside id="text-input-scope-notice" class="text-input-scope-notice" aria-labelledby="text-input-source-label" hidden>
         <h3>텍스트 입력 분석 범위</h3>
         <p><strong id="text-input-source-label"></strong> 한 종류의 입력 로그만 분석했습니다.</p>

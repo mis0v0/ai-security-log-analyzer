@@ -99,6 +99,10 @@ def serve_input_quality_ui_script() -> Response:
     return _fixed_asset("input-quality-ui-36-12b.js", "text/javascript")
 
 
+def serve_json_access_mapping_script() -> Response:
+    return _fixed_asset("json-access-mapping.js", "text/javascript")
+
+
 def serve_review_queue_ui_script_36_13a() -> Response:
     return _fixed_asset("review-queue-ui-36-13a.js", "text/javascript")
 

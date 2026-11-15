@@ -62,7 +62,7 @@ uv run python -m app.local_web --monitor
 
 OpenSSH의 기존 ISO-style·제한 RFC 5424와 `journalctl --output=short-iso` 하위집합을 지원합니다. [정확한 형식·명령 예시·검증 한계](docs/openssh_syslog_timestamp_provenance_36_11b.md#17-real-log-1-journalctl-short-iso-추가-지원)를 확인하십시오. 실제 Linux journal 출력 검증은 `REAL_LOG_VALIDATION_PENDING`입니다.
 
-Access 입력은 기존 CLF/Combined와 명시적 `asla-nginx-access-v1` JSON 프로파일을 지원합니다. [JSON 스키마와 Nginx log_format 설정](docs/access_combined_realistic_compatibility_36_11a.md#16-real-log-2-nginx-json-프로파일)을 함께 확인하십시오. 실제 Nginx 출력은 `PRODUCER_OUTPUT_NOT_TESTED`입니다.
+Access 입력은 기존 CLF/Combined와 명시적 `asla-nginx-access-v1` JSON 프로파일을 지원합니다. [JSON 스키마와 Nginx log_format 설정](docs/access_combined_realistic_compatibility_36_11a.md#16-real-log-2-nginx-json-프로파일)을 확인하십시오. 실제 Nginx 출력은 `PRODUCER_OUTPUT_NOT_TESTED`입니다. 기존 JSONL은 별도 [사용자 확인 필드 매핑](docs/final_demo_guide.md#기존-jsonl-웹-접근-로그의-필드-연결)으로 분석할 수 있습니다. 연결은 로그 진위나 필드 의미의 검증이 아닙니다.
 
 ## 결과를 읽는 법
 

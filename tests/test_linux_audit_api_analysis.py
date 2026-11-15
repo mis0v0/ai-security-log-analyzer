@@ -592,6 +592,7 @@ def test_existing_api_routes_openapi_and_new_helper_isolation():
     assert set(app.openapi()["paths"]) == {
         "/api/health", "/api/analyze", "/api/v1/investigations/sample", "/api/v1/investigations", "/api/v1/investigations/linux-audit", "/api/v1/investigations/guidance",
         "/api/v1/investigations/checklist", "/api/v1/investigations/text",
+        "/api/v1/investigations/json-mapping",
     }
     assert "/api/analyze-linux-audit" not in app.openapi()["paths"]
 
