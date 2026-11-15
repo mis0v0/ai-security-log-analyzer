@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "data_scope": "synthetic-only",
+  "scenarios": [
+    {
+      "id": "detect1_d01_named_dot_suffix",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d01_named_dot_suffix.log",
+      "subject": "192.0.2.120",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.120"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_ABSENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "A named component ending in two dots is not a complete parent component (RFC3986 3.3). Existing negatives omit a separator after the suffix.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_d02_named_three_dots",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d02_named_three_dots.log",
+      "subject": "192.0.2.121",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.121"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_ABSENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "A named component with three trailing dots remains named, not a parent component. Extends the missing suffix-plus-separator boundary, not authorization filtering.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_d03_encoded_named_suffix",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d03_encoded_named_suffix.log",
+      "subject": "192.0.2.122",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.122"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_ABSENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "Percent decoding leaves a named component, not a parent reference. Existing percent cases test parent components, not named suffixes.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_d04_parent_with_leaf",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d04_parent_with_leaf.log",
+      "subject": "192.0.2.123",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.123"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "SIMULATED_ATTACK",
+      "label_basis": "A complete parent component precedes a leaf. Control for d05: removing only the final separator and leaf must retain the reference-level pattern.",
+      "context_basis": "Internally simulated reference probe; no compromise, file access or real attacker label."
+    },
+    {
+      "id": "detect1_d05_terminal_parent",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d05_terminal_parent.log",
+      "subject": "192.0.2.124",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.124"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "SIMULATED_ATTACK",
+      "label_basis": "RFC3986 3.3 and 5.2.4 define a terminal complete two-dot component as a parent reference. Existing positives require a following separator.",
+      "context_basis": "Internally simulated reference probe; no compromise, file access or real attacker label."
+    },
+    {
+      "id": "detect1_d06_document_query",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d06_document_query.log",
+      "subject": "192.0.2.125",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.125"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code",
+        "http.query"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "The query contains an explicit relative parent-reference token even in documentation. Context is separate; also checks mapped records without protocol or response size.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_d07_invalid_calendar",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_d07_invalid_calendar.log",
+      "subject": "192.0.2.126",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.126"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "UNVERIFIED",
+      "label_basis": "Input construction includes a reference but an invalid calendar date. Exclude parser rejection instead of counting a detector negative; paired across both formats.",
+      "context_basis": "Context was not established beyond the synthetic request."
+    },
+    {
+      "id": "detect1_v01_encoded_named_component",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v01_encoded_named_component.log",
+      "subject": "2001:db8::91",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "2001:db8::91"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_ABSENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "A differently encoded named suffix is not a parent component. Validation of suffix boundary across independent request data and IPv6.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_v02_encoded_terminal_parent",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v02_encoded_terminal_parent.log",
+      "subject": "192.0.2.128",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.128"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "UNVERIFIED",
+      "label_basis": "Decoded terminal component is exactly two dots. New encoded terminal boundary; authorization and backend traversal success remain unknown.",
+      "context_basis": "Context was not established beyond the synthetic request."
+    },
+    {
+      "id": "detect1_v03_terminal_parent_with_query",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v03_terminal_parent_with_query.log",
+      "subject": "192.0.2.129",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.129"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code",
+        "http.query"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "SIMULATED_ATTACK",
+      "label_basis": "A separate ordinary query does not change the terminal parent path component. Tests path/query separation rather than changing detector thresholds.",
+      "context_basis": "Internally simulated reference probe; no compromise, file access or real attacker label."
+    },
+    {
+      "id": "detect1_v04_backslash_query",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v04_backslash_query.log",
+      "subject": "192.0.2.130",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.130"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code",
+        "http.query"
+      ],
+      "behavioral_pattern": "PATTERN_PRESENT",
+      "operational_context": "AMBIGUOUS",
+      "label_basis": "OWASP describes encoded backslash parent references. Cross-format control with mixed separators and HTTP 500; context ambiguity does not erase the lexical pattern.",
+      "context_basis": "No backend OS, route handling or authorization evidence is available."
+    },
+    {
+      "id": "detect1_v05_current_directory",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v05_current_directory.log",
+      "subject": "2001:db8::91",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "2001:db8::91"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_ABSENT",
+      "operational_context": "KNOWN_BENIGN",
+      "label_basis": "A single-dot current-directory component is not a two-dot parent reference. Paired IPv6 mapping control; not a claim of safe service behavior.",
+      "context_basis": "Internally constructed documentation or ordinary-resource scenario; authorization is fixture context, not inferred from access fields."
+    },
+    {
+      "id": "detect1_v06_bare_dot_run",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v06_bare_dot_run.log",
+      "subject": "192.0.2.132",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.132"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code"
+      ],
+      "behavioral_pattern": "PATTERN_UNDETERMINED",
+      "operational_context": "AMBIGUOUS",
+      "label_basis": "A bare longer dot-run is not an RFC parent component, but OS-specific dot handling is not logged. Do not relabel it benign or suppress it without backend evidence.",
+      "context_basis": "No backend OS, route handling or authorization evidence is available."
+    },
+    {
+      "id": "detect1_v07_unicode_dot_alias",
+      "detector": "path_traversal",
+      "source": "access",
+      "fixture": "detect1_v07_unicode_dot_alias.log",
+      "subject": "192.0.2.133",
+      "expected_event_types": [
+        "http_request"
+      ],
+      "expected_event_subjects": [
+        "192.0.2.133"
+      ],
+      "required_fields": [
+        "timestamp",
+        "src_ip",
+        "http.method",
+        "http.path",
+        "http.status_code",
+        "http.query"
+      ],
+      "behavioral_pattern": "PATTERN_UNDETERMINED",
+      "operational_context": "UNVERIFIED",
+      "label_basis": "Fullwidth-dot interpretation depends on unobserved Unicode normalization and file handling. Existing evaluation does not test this ambiguity; exclude from confusion.",
+      "context_basis": "Context was not established beyond the synthetic request."
+    }
+  ]
+}

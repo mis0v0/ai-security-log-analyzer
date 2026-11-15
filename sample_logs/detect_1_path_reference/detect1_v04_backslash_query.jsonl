@@ -1,0 +1,1 @@
+{"occurred_at":"2026-11-12T14:20:00+02:00","observed_peer":"192.0.2.130","http_verb":"GET","original_target":"/fetch?file=..%5Cfolder%2Fnote","response_code":500,"unmapped_note":"SYNTHETIC_UNMAPPED_DETECT1_CANARY"}
