@@ -5,6 +5,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
   const ENDPOINT = "/api/v1/investigations/sample";
   const LOCAL_ENDPOINT = "/api/v1/investigations";
   const LOCAL_TEXT_ENDPOINT_36_8C = "/api/v1/investigations/text";
+  const JSON_MAPPING_ENDPOINT = "/api/v1/investigations/json-mapping";
   const GUIDANCE_ENDPOINT = "/api/v1/investigations/guidance";
   const CHECKLIST_ENDPOINT = "/api/v1/investigations/checklist";
   const GUIDANCE_CORPUS_DIGEST = "fe7cc8cbd77319c4ce9a1af731da004eeffc08d272c0ee04174db96eb2897ac6";
@@ -243,6 +244,9 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
   const localStatus = document.getElementById("local-status");
   const inputModeFile = document.getElementById("input-mode-file");
   const inputModeText = document.getElementById("input-mode-text");
+  const mappingUi = window.jsonAccessMapping.create(validateTextInputLocally36_8C, () => pending);
+  const {inputModeMapping, mappingPanel, mappingText, mappingDiscover, mappingClear, mappingFields,
+    mappingConfirm, mappingResultNotice, clearMappingInput, selectedMapping, mappingFailure} = mappingUi;
   const fileInputPanel = document.getElementById("file-input-panel");
   const textInputPanel = document.getElementById("text-input-panel");
   const textSource = document.getElementById("text-source");
@@ -2469,6 +2473,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
   }
 
   function clearPreviousResult() {
+    mappingResultNotice.hidden = true;
     workspaceDetailGeneration += 1;
     clearReviewWorkflowState();
     reviewQueue.clear();
@@ -2593,6 +2598,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
   }
 
   function renderResult(data, mode, textScope = null) {
+    mappingResultNotice.hidden = true;
     currentInvestigation = data;
     currentInvestigationMode = mode;
     if (reviewRouteRef() !== null) history.replaceState(null, "", `${location.pathname}${location.search}`);
@@ -2694,33 +2700,39 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     if (pending) {
       inputModeFile.checked = localInputMode36_8C === "file";
       inputModeText.checked = localInputMode36_8C === "text";
+      inputModeMapping.checked = localInputMode36_8C === "mapping";
       return;
     }
     if (nextMode === localInputMode36_8C) return;
-    const hasPendingInput = localInputMode36_8C === "text" ? logText.value.length > 0 :
+    const hasPendingInput = localInputMode36_8C === "mapping" ? mappingText.value.length > 0 :
+      localInputMode36_8C === "text" ? logText.value.length > 0 :
       FILE_FIELDS.some(([, id]) => document.getElementById(id).files.length > 0);
     if (hasPendingInput && !window.confirm("입력 방식을 바꾸면 현재 입력 내용이 지워집니다. 계속하시겠습니까?")) {
       inputModeFile.checked = localInputMode36_8C === "file";
       inputModeText.checked = localInputMode36_8C === "text";
+      inputModeMapping.checked = localInputMode36_8C === "mapping";
       return;
     }
     localTextRequestGeneration36_8C += 1;
+    clearMappingInput();
     if (localInputMode36_8C === "text") {
       logText.value = "";
       clearTextFieldError36_8C();
       updateTextCounts36_8C();
-    } else {
+    } else if (localInputMode36_8C === "file") {
       FILE_FIELDS.forEach(([, id]) => { document.getElementById(id).value = ""; });
       clearFieldErrors();
     }
     localInputMode36_8C = nextMode;
     inputModeFile.checked = nextMode === "file";
     inputModeText.checked = nextMode === "text";
+    inputModeMapping.checked = nextMode === "mapping";
     fileInputPanel.disabled = nextMode !== "file";
     fileInputPanel.hidden = nextMode !== "file";
     textInputPanel.hidden = nextMode !== "text";
-    localButton.textContent = nextMode === "text" ? "로그 분석하기" : "실제 로그 분석하기";
-    localStatus.textContent = nextMode === "text" ?
+    mappingPanel.hidden = nextMode !== "mapping";
+    localButton.textContent = nextMode === "mapping" ? "매핑 확인 후 분석하기" : nextMode === "text" ? "로그 분석하기" : "실제 로그 분석하기";
+    localStatus.textContent = nextMode === "mapping" ? "JSONL을 붙여넣고 필드 이름 확인부터 시작하세요." : nextMode === "text" ?
       "로그를 붙여넣고 명시적으로 분석을 요청할 수 있습니다." :
       "로컬 서버에서 세 파일을 선택해 분석할 수 있습니다.";
   }
@@ -2728,6 +2740,13 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
   function lockLocalInputControls36_8C(locked) {
     inputModeFile.disabled = locked;
     inputModeText.disabled = locked;
+    inputModeMapping.disabled = locked;
+    mappingText.disabled = locked;
+    mappingDiscover.disabled = locked;
+    mappingClear.disabled = locked;
+    mappingFields.disabled = locked || mappingUi.keys.length === 0;
+    mappingConfirm.disabled = locked || Object.values(selectedMapping()).some((key) => !key) ||
+      new Set(Object.values(selectedMapping())).size !== 5;
     fileInputPanel.disabled = locked || localInputMode36_8C !== "file";
     textSource.disabled = locked;
     logText.disabled = locked;
@@ -2739,6 +2758,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     logText.value = "";
     clearTextFieldError36_8C();
     updateTextCounts36_8C();
+    clearMappingInput();
   }
 
   async function requestLocalInvestigation(event) {
@@ -2747,15 +2767,20 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     clearFieldErrors();
     clearTextFieldError36_8C();
     clearPreviousResult();
-    if (localInputMode36_8C === "text") {
-      const source = textSource.querySelector('input[name="text_source"]:checked')?.value ?? "application";
-      const logValue = logText.value;
+    if (localInputMode36_8C === "text" || localInputMode36_8C === "mapping") {
+      const mapped = localInputMode36_8C === "mapping";
+      const source = mapped ? "access" : textSource.querySelector('input[name="text_source"]:checked')?.value ?? "application";
+      const logValue = mapped ? mappingText.value : logText.value;
       const invalid = validateTextInputLocally36_8C(source, logValue);
       if (invalid) {
+        if (mapped) return mappingFailure(`${invalid[1]} JSONL 입력과 연결을 확인하세요.`);
         if (invalid[0] !== null) textFieldError36_8C(invalid[0], invalid[1]);
         renderError(new PublicFailure(invalid[1], "로그 종류와 입력 한도를 확인한 뒤 다시 시도하십시오.", false), "local");
         return;
       }
+      const requestBody = mapped ? mappingUi.prepareRequest() :
+        {schema_version: 1, source, log_text: logValue};
+      if (requestBody === null) return;
       const generation = ++localTextRequestGeneration36_8C;
       pending = true;
       button.disabled = true;
@@ -2764,24 +2789,27 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
       localButton.textContent = "로그 분석 중";
       localStatus.textContent = "붙여넣은 로그를 로컬 서버에서 분석하고 있습니다.";
       try {
-        const response = await fetch(LOCAL_TEXT_ENDPOINT_36_8C, {
+        const response = await fetch(mapped ? JSON_MAPPING_ENDPOINT : LOCAL_TEXT_ENDPOINT_36_8C, {
           method: "POST",
           headers: {Accept: "application/json", "Content-Type": "application/json"},
           credentials: "omit",
-          body: JSON.stringify({schema_version: 1, source, log_text: logValue})
+          body: JSON.stringify(requestBody)
         });
         const payload = await boundedJson(response);
         if (!response.ok) {
           const error = validateTextApiError36_8C(payload, response.status);
-          if (error.field) textFieldError36_8C(error.field, error.user_message);
-          throw new PublicFailure(error.user_message, error.recovery_action, error.retryable,
+          if (error.field && !mapped) textFieldError36_8C(error.field, error.user_message);
+          throw new PublicFailure(error.user_message, mapped && error.error_code === "PARSER_INCOMPATIBLE" ?
+            "모든 줄의 필수 값·타입·시각·IP·URI와 필드 연결을 확인한 뒤 다시 입력하세요." : error.recovery_action, error.retryable,
             error.input_quality, error.error_code);
         }
         const validated = validateTextInvestigationEnvelope36_8C(payload, source);
-        if (generation !== localTextRequestGeneration36_8C || localInputMode36_8C !== "text" || localSection.hidden) return;
+        if (generation !== localTextRequestGeneration36_8C || localInputMode36_8C !== (mapped ? "mapping" : "text") || localSection.hidden) return;
+        if (mapped) clearMappingInput();
         renderResult(validated.result, "local", {source: validated.source});
+        mappingResultNotice.hidden = !mapped;
         currentReportMode = "text";
-        localStatus.textContent = "텍스트 로그 분석이 완료되었습니다. 입력 내용은 화면에서 지웠습니다.";
+        localStatus.textContent = mapped ? "선택한 필드 연결로 분석했습니다. 입력과 연결은 화면에서 지웠습니다." : "텍스트 로그 분석이 완료되었습니다. 입력 내용은 화면에서 지웠습니다.";
         logText.value = "";
         updateTextCounts36_8C();
       } catch (failure) {
@@ -2789,13 +2817,14 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
         clearPreviousResult();
         logText.value = "";
         updateTextCounts36_8C();
+        if (mapped) clearMappingInput();
         renderError(failure, "local");
       } finally {
         pending = false;
         button.disabled = false;
         localButton.disabled = false;
         lockLocalInputControls36_8C(false);
-        localButton.textContent = localInputMode36_8C === "text" ? "로그 분석하기" : "실제 로그 분석하기";
+        localButton.textContent = localInputMode36_8C === "mapping" ? "매핑 확인 후 분석하기" : localInputMode36_8C === "text" ? "로그 분석하기" : "실제 로그 분석하기";
       }
       return;
     }
@@ -2843,6 +2872,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
 
   inputModeFile.addEventListener("change", () => setLocalInputMode36_8C("file"));
   inputModeText.addEventListener("change", () => setLocalInputMode36_8C("text"));
+  inputModeMapping.addEventListener("change", () => setLocalInputMode36_8C("mapping"));
   logText.addEventListener("input", () => { clearTextFieldError36_8C(); updateTextCounts36_8C(); });
   textClear.addEventListener("click", () => {
     if (pending) return;
@@ -2850,7 +2880,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     localStatus.textContent = "붙여넣은 로그 입력을 지웠습니다.";
     logText.focus();
   });
-  ["nav-start", "nav-audit", "nav-live", "nav-results"].forEach((id) => {
+  ["nav-start", "nav-audit", "nav-live", "nav-results", "audit-choice-button"].forEach((id) => {
     const navigationButton = document.getElementById(id);
     if (navigationButton) navigationButton.addEventListener("click", clearTextInputOnExit36_8C);
   });

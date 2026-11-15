@@ -3,7 +3,7 @@
   "private": true,
   "description": "Development-only accessibility checks; no production Node bundle",
   "scripts": {
-    "test:a11y": "node tests/ui_accessibility_axe_pilot_28_1.mjs"
+    "test:a11y": "node tests/ui_accessibility_axe_pilot_28_1.mjs && node tests/ui_json_access_mapping_real_log_3.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

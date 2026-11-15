@@ -39,6 +39,7 @@ from app.models.local_text_investigation import (
     LOCAL_TEXT_INVESTIGATION_OPENAPI_REQUEST,
     LocalTextInvestigationErrorResponse, LocalTextInvestigationResponse,
 )
+from app.models.json_access_mapping import JSON_ACCESS_MAPPING_OPENAPI_REQUEST
 from app.local_guidance_33_4 import (
     GuidanceErrorResponse, GuidanceResponse, GUIDANCE_OPENAPI_REQUEST,
     create_guidance_endpoint,
@@ -59,6 +60,7 @@ from app.models.linux_audit_investigation import (
 )
 from app.web_ui import (
     serve_demo_index, serve_demo_script, serve_demo_styles, serve_input_quality_ui_script,
+    serve_json_access_mapping_script,
     serve_review_queue_ui_script_36_13a,
     serve_investigation_review_state_script_36_14d,
     serve_live_monitoring_script,
@@ -508,6 +510,9 @@ def create_app(
     if not enable_linux_audit_api:
         local_admission = create_local_admission()
         configured_app.add_api_route(
+            "/assets/json-access-mapping.js", serve_json_access_mapping_script, methods=["GET"], include_in_schema=False,
+        )
+        configured_app.add_api_route(
             "/", evaluation_index if enable_evidence_review_viewer else serve_demo_index,
             methods=["GET"], include_in_schema=False,
         )
@@ -665,6 +670,20 @@ def create_app(
                 code: {"model": LocalTextInvestigationErrorResponse}
                 for code in (400, 403, 413, 415, 422, 429, 500, 503)
             },
+        )
+
+    if not enable_linux_audit_api:
+        configured_app.add_api_route(
+            "/api/v1/investigations/json-mapping",
+            create_local_text_endpoint(
+                _analyze_checklist_input, project_investigation_cases_from_analysis,
+                build_investigation_report_projection, checklist_registry=checklist_registry,
+                admission=local_admission, mapped_access=True,
+            ),
+            methods=["POST"], response_model=LocalTextInvestigationResponse,
+            openapi_extra={"requestBody": JSON_ACCESS_MAPPING_OPENAPI_REQUEST},
+            responses={code: {"model": LocalTextInvestigationErrorResponse}
+                       for code in (400, 403, 413, 415, 422, 429, 500, 503)},
         )
 
     if enable_linux_audit_api:

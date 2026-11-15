@@ -988,6 +988,13 @@ button, .review-detail-link { min-height: 48px; font-size: 1rem; line-height: 1.
 .file-field input, .text-input-panel select, .text-input-panel textarea,
 .investigation-guidance select, .workspace-evidence-panel-36-6e select { font-size: 1rem; }
 .text-input-panel select { min-height: 48px; }
+.json-mapping-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.json-mapping-grid > div { display: grid; gap: .45rem; min-width: 0; }
+.json-mapping-grid select { width: 100%; min-width: 0; max-width: 100%; }
+.json-mapping-preview { overflow-wrap: anywhere; margin: 0; }
+.json-mapping-confirm { display: flex; align-items: flex-start; gap: .7rem; min-height: 44px; }
+.json-mapping-confirm input { flex: 0 0 auto; width: 1.15rem; height: 1.15rem; margin-top: .2rem; }
+@media (max-width: 640px) { .json-mapping-grid { grid-template-columns: minmax(0, 1fr); } }
 .text-input-panel textarea { line-height: 1.6; }
 
 .workspace-dashboard-36-6c { gap: 1.65rem; }

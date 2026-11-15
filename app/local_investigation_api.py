@@ -3,6 +3,7 @@
 import asyncio
 import codecs
 from collections import deque
+from functools import partial
 import json
 import multiprocessing
 import os
@@ -766,7 +767,7 @@ def create_local_endpoint(
 
 def create_local_text_endpoint(
     analyze: Callable, project: Callable, build_report_projection: Callable,
-    checklist_registry=None, admission=None,
+    checklist_registry=None, admission=None, *, mapped_access=False,
 ):
     limiter = admission if admission is not None else create_local_admission()
 
@@ -792,10 +793,25 @@ def create_local_text_endpoint(
             try:
                 async with asyncio.timeout(_UPLOAD_TIMEOUT_SECONDS):
                     raw_body = await _bounded_json_body(request)
-                text_request = _parse_text_request(raw_body)
-                raw_text, input_quality = _validate_text_and_quality(
-                    text_request.source, text_request.log_text,
-                )
+                if mapped_access:
+                    from app.json_access_mapping import (
+                        MappingInputError, analyze_mapped_access_file,
+                        parse_mapping_request, validate_mapped_text,
+                    )
+                    try:
+                        text_request = parse_mapping_request(raw_body)
+                        raw_text, input_quality = validate_mapped_text(text_request.log_text, text_request.mapping)
+                    except MappingInputError as error:
+                        raise _TextInputError(error.code) from None
+                    source = "access"
+                    input_analyzer = partial(analyze_mapped_access_file, mapping=text_request.mapping)
+                else:
+                    text_request = _parse_text_request(raw_body)
+                    raw_text, input_quality = _validate_text_and_quality(
+                        text_request.source, text_request.log_text,
+                    )
+                    source = text_request.source
+                    input_analyzer = analyze
             except TimeoutError:
                 return _text_error("BODY_TIMEOUT")
             except _TextInputError as error:
@@ -809,9 +825,9 @@ def create_local_text_endpoint(
                     path = _stage_text(raw_text, directory)
                 except _TextInputError as error:
                     return _text_error(error.code, error.input_quality)
-                sources = [{"source": text_request.source, "path": str(path)}]
+                sources = [{"source": source, "path": str(path)}]
                 worker_result = await _run_worker(
-                    sources, analyze, project, build_report_projection,
+                    sources, input_analyzer, project, build_report_projection,
                     _render_text_local_report, input_quality,
                 )
                 if isinstance(worker_result, JSONResponse):
@@ -842,7 +858,7 @@ def create_local_text_endpoint(
                     envelope = LocalTextInvestigationResponse(
                         schema_version="1",
                         input_scope=LocalTextInputScope(
-                            mode="text", source=text_request.source,
+                            mode="text", source=source,
                             notice_code="PARTIAL_SINGLE_SOURCE",
                         ),
                         result=response,
