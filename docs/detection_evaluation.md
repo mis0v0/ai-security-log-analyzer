@@ -141,3 +141,60 @@ Parser: 200줄 중 parsed 195, ignored 2, rejected 3, 예상 밖 parse/rejection
 Linux category metric은 expected/actual observation 수, false/missed category assignment, expected unique execution 수를 별도로 제시한다. Category assignment의 precision·recall은 포함된 라벨에서만 계산하고 분모가 0이면 `not_applicable`이다. TN universe가 정의되지 않아 IP 탐지의 TN·accuracy를 재사용하지 않는다. CLI text와 JSON은 같은 고정 수치를 담고 JSON은 정렬된 key와 결정적 순서로 출력한다. `--scenario`는 기존 79개 IP 시나리오만 필터링하며 Linux 21개 section은 독립적으로 유지된다. 평가 fixture 안의 argv·path·node·serial 원문은 결과에 복사하지 않는다. 같은 fixture에서 만든 합성 라벨은 운영환경 악성 탐지율이 아니며 정상 관리·자동화 사용, Audit 정책의 누락, `comm` truncation, `argv[0]` spoofing은 남은 평가 공백이다. 분류·보호 경계는 [Linux Audit 프로세스 실행 문서](linux_audit_process_execution.md)를 참고한다.
 
 Phase 9.1 로컬 웹 화면은 같은 Phase 9 분류기와 별도 privacy-safe 범주 집계를 사용한다. 기존 79개 인증·웹 시나리오 및 Linux 21개 오프라인 시나리오의 라벨·metric을 변경하지 않는다. 웹 UI가 추가되어도 합성 평가 일치도를 운영환경 악성 탐지율로 일반화할 수 없다.
+
+## DETECT-1 — Path Traversal 참조 범위의 측정된 한계
+
+기준 main `88a5716b9332bd673ee0806429487bec3bca261c`, 확인일 2026-11-15. **Production 변경 없음, `DETECT_1_EVIDENCE_ONLY`**. 아래 수치는 보정 성능이 아니라 고정한 참조 기준과 현행 관찰 계약의 차이다. 회귀 테스트의 통과는 이 차이를 재현했다는 뜻이며 모든 라벨이 탐지 결과와 일치한다는 뜻이 아니다.
+
+### 기존 평가 감사와 선택 근거
+
+기존 `detector_accuracy_cli --format json`은 별도 46개를 유지한다. 각 탐지기의 TP/FP/FN/TN과 양성/음성 support는 Brute 4/0/0/3 (4/3), Spray 2/0/0/5 (2/5), Traversal 5/0/0/1 (5/1), SQLi 4/0/0/2 (4/2), XSS 4/0/0/1 (4/1), Sensitive 4/0/0/2 (4/2), Scanning 3/0/0/4 (3/4)다. Parser 제외 0, 계정 관측 부족의 미확정 라벨 2개(Brute·Spray 각 1), 합성 운영 false-alert 후보 7개다. 승인된 재시도·점검·문서 검색도 관측 패턴을 충족하면 TP이며 승인 맥락만으로 FP로 바꾸지 않는다.
+
+기존 Traversal은 encoding·query·backslash·오류 응답·문서 검색을 포함하지만 음성은 점을 포함하는 일반 이름 한 사례다. 코드의 `../`·`..\\` 부분 문자열 검사와 **완전한 부모 구성요소**의 차이, 마지막 부모 구성요소, 매핑 경로 동등성을 보여주지 못한다. 따라서 이번에는 `path_traversal` 하나만 선택했다. 기존 79개·Linux 21개 및 auth 전용 counterfactual development 16개·holdout 14개는 바꾸거나 새 challenge support에 합치지 않는다. Auth 전용 mutation/label 정책을 웹 입력에 억지로 적용하거나 새 평가 엔진을 만들지 않는다. 기존 `detector_accuracy.evaluate(manifest_path)`와 `Confusion`을 그대로 재사용한다.
+
+### Research Basis와 관찰 필드 연결
+
+- RFC Editor, [RFC 3986 §3.3·§5.2.4](https://www.rfc-editor.org/rfc/rfc3986#section-3.3), 2005-01: 완전한 두 점 구성요소와 일반 이름의 일부를 구분하며 마지막 구성요소도 참조 해석에 포함한다. 이를 `HttpContext.path`의 참조 수준 라벨에 사용했다. RFC의 참조 해석은 실제 서버의 파일 접근이나 취약점을 입증하지 않는다.
+- OWASP, [Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal), 게시일 미표시·2026-11-15 확인: percent encoding·backslash 변형과 OS별 파일명 처리를 고려해야 한다. `http.path/query`를 제공하는 CLF와 승인 JSONL mapping을 비교하며 OS·Unicode 해석이 불명확한 두 사례는 미확정으로 제외했다. 실제 backend와 같은 decode/정규화를 한다고 가정하지 않는다.
+- MITRE, [CWE-22](https://cwe.mitre.org/data/definitions/22.html), v5.0 갱신 2026-10-28: 제한된 디렉터리 밖으로의 경로 해석이 약점의 핵심이다. 요청 필드·HTTP 상태만으로 실제 파일 접근이나 경계 이탈을 알 수 없으므로 성공·악의성 라벨을 만들지 않았다.
+
+연결은 **참조 문법 → 원 요청 URI·시각·IP·method/status → 기존 parser의 UTC-aware `NormalizedEvent.http.path/query` → 현행 반복 decoding과 부분 문자열 관찰**이다. 정상 이름 suffix의 alert와 마지막 부모 참조의 non-match를 분리한다. 현행 decoding·공개 Evidence·탐지 임계값·시간 창·Risk는 그대로이며 외부 표준의 공격 판정으로 포장하지 않는다.
+
+### 실행 전 고정한 14개
+
+`sample_logs/detect_1_path_reference/manifest.json`은 기존 정확도 manifest schema다. 각 라벨 근거에는 독립 판단과 기존 평가 대비 차이가 있고 운영 맥락은 별도다. CLF와 수동 선택 JSONL 표현을 함께 고정했다. 원본 target·IP·query를 평가 출력에 넣지 않는다.
+
+| ID suffix (`detect1_` 접두사) | 관측 활동·기존 평가와의 차이 | 참조 패턴 | 운영 맥락 | Parser 기대 |
+| --- | --- | --- | --- | --- |
+| d01_named_dot_suffix | 두 점으로 끝나는 일반 이름 뒤 구분자 | 없음 | 합성 정상 | 인식 |
+| d02_named_three_dots | 세 점 suffix의 일반 이름 뒤 구분자 | 없음 | 합성 정상 | 인식 |
+| d03_encoded_named_suffix | percent-encoded 일반 이름 suffix | 없음 | 합성 정상 | 인식 |
+| d04_parent_with_leaf | 완전한 부모 구성요소 뒤 leaf; d05 대조 | 있음 | 합성 probe | 인식 |
+| d05_terminal_parent | leaf 없는 마지막 부모 구성요소 | 있음 | 합성 probe | 인식 |
+| d06_document_query | 문서 맥락의 명시적 상대 참조; nullable metadata 매핑 대조 | 있음 | 합성 정상 | 인식 |
+| d07_invalid_calendar | 잘못된 calendar; parser 제외 대조 | 있음 | 미검증 | 거부 |
+| v01_encoded_named_component | 별도 encoded suffix·IPv6 검증 | 없음 | 합성 정상 | 인식 |
+| v02_encoded_terminal_parent | percent-encoded 마지막 부모 구성요소 | 있음 | 미검증 | 인식 |
+| v03_terminal_parent_with_query | 별도 일반 query와 마지막 부모 path 분리 | 있음 | 합성 probe | 인식 |
+| v04_backslash_query | 혼합 구분자·HTTP 500·JSONL 전달 대조 | 있음 | 모호 | 인식 |
+| v05_current_directory | 단일 점 구성요소·IPv6 음성 대조 | 없음 | 합성 정상 | 인식 |
+| v06_bare_dot_run | 이름 없는 더 긴 점 열의 OS 해석 부족 | 미확정 | 모호 | 인식 |
+| v07_unicode_dot_alias | Unicode folding·파일 처리 관측 없음 | 미확정 | 미검증 | 인식 |
+
+필수 telemetry는 시각·관측 IP·HTTP method·원 path·status, query 사례는 query도 포함한다. JSONL의 키는 고정 승인 mapping으로 연결하며 protocol·response size를 만들지 않는다. 두 표현의 공통 정규화 필드를 먼저 비교하고, 그 뒤 기존 pipeline의 탐지·실제 evidence(없는 response size 제외)·관계·위험도를 비교한다. **14개 논리 사례이며 28개 독립 표본이 아니다.** 모든 자료·라벨은 이번 개발 과정에서 내부 구성한 비민감 합성 자료다. 독립 인간 검토나 실제 운영 ground truth가 아니다.
+
+최초 후보 실행 전 manifest SHA-256은 `040c3d2f394c50d985ee158ef7337c0bc7a8c314e5f2d75c3a032c2fbb8c61cd`, 전체 fixture·manifest hash 목록 SHA-256은 `c95f142b87ae8686cbcd2c3277736f3657c73286a3ee40b30a7d5f459e2a659b`로 고정했다. Hash 목록 자체의 digest는 테스트에 별도로 고정하며 재봉인으로 라벨을 바꾸지 않는다. 개발 7개 실행 후 Production을 변경하지 않기로 결정하고 나머지 검증 7개를 처음 실행했다.
+
+### 측정 결과와 변경하지 않은 이유
+
+| 범위 | TP | FP | FN | TN | 양성/음성 support | 미확정/parser 제외 | precision / recall / F1 |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| 개발 7개 | 2 | 3 | 1 | 0 | 3 / 3 | 0 / 1 | 0.400000 / 0.666667 / 0.500000 |
+| 별도 검증 7개 | 1 | 1 | 2 | 1 | 3 / 2 | 2 / 0 | 0.500000 / 0.333333 / 0.400000 |
+| 전체 14개 | 3 | 4 | 3 | 1 | 6 / 5 | 2 / 1 | 0.428571 / 0.500000 / 0.461538 |
+
+CLF와 JSONL mapping의 공통 event 사실 및 해당 결과가 일치했다. Parser 거부 1개와 의미 미확정 2개를 TN으로 세지 않았다. 운영 false-alert 후보 5개 중 문서 query는 패턴 TP다. 나머지 4개는 새 **부모 참조 기준에 한정한** FP이며, 기존 부분 문자열 계약에서는 문자열이 실제로 존재한다. 마지막 부모 구성요소 3개는 새 기준의 FN이고 실제 파일 접근·공격 성공의 누락을 뜻하지 않는다. 따라서 이 수치와 기존 좁은 46개 평가의 1.0은 같은 모집단·같은 명제를 측정하지 않는다.
+
+Production 보정을 하지 않았다. 현행 API adapter는 `path_pattern`을 두 구분자 패턴으로 제한한다. 마지막 구성요소를 탐지했다고 하면서 관측되지 않은 뒤 구분자를 만들어 넣거나 이 계약을 넓힐 수 없다. 반대로 광범위한 dot/Unicode 표현을 정상으로 억제하려면 이 로그에 없는 backend 정규화·파일 처리 근거가 필요하다. 이번 라벨로 점수를 올리기 위해 기존 탐지 명제를 조용히 교체하지 않았다. 결과는 보정 전후 동일하며 Production RED/GREEN은 해당하지 않는다.
+
+회귀는 고정 hash·측정된 불일치·정규화 동등성·제외 분모·개인정보 경계를 보호한다. 새 framework/CLI는 없으며 `uv run pytest -q tests/test_detect_1_path_reference.py`로 재현한다. 실제 운영 정확도, 승인 활동의 오탐률, 서버 취약 여부·파일 접근 성공·로그 진위는 계속 미검증이다. 추가로 필요한 근거는 proxy/backend의 target 재작성·정규화 설정, 라우트 처리와 파일 접근 기록, 승인 활동 맥락이다. Snapshot payload·source pin·개인정보 공개 계약·기존 46/79/21 및 S1 HOLD·운영 NO_GO는 바꾸지 않는다.

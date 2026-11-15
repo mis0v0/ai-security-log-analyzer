@@ -1,0 +1,1 @@
+192.0.2.130 - - [12/Nov/2026:14:20:00 +0200] "GET /fetch?file=..%5Cfolder%2Fnote HTTP/1.1" 500 23
