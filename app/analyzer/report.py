@@ -8,6 +8,7 @@ from app.detector.shared_memory_execution import (
     SharedMemoryExecutionReviewSummary,
 )
 from app.models.schemas import Evidence
+from app.detector.web_attack import valid_path_evidence, path_reference_unassessed, PATH_UNASSESSED_NOTICE
 from app.analyzer.report_projection import (
     InvestigationReportProjectionError,
     _validate_rationale,
@@ -137,12 +138,14 @@ def _authentication_evidence_lines(detection):
 
 def _path_traversal_evidence_lines(detection):
     expected = (
-        ("url_decoded_path", "Request path", str, True, ""),
+        ("url_decoded_path", "Request path", str, False, ""),
+        ("url_original_path", "Original request path", str, False, ""),
         ("path_pattern", "Matched pattern", str, True, ""),
         ("url_decoded_query", "Query", str, False, ""),
         ("http_method", "HTTP method", str, False, ""),
         ("http_status_code", "Response status", int, False, ""),
         ("http_response_size", "Response size", int, False, " bytes"),
+        ("path_observation_kind", "Observation kind", str, False, ""),
     )
 
     if type(detection.evidence) is not list:
@@ -177,7 +180,7 @@ def _path_traversal_evidence_lines(detection):
 
         display_value = (
             "개인정보 보호를 위해 표시하지 않습니다."
-            if evidence_type in {"url_decoded_path", "url_decoded_query"}
+            if evidence_type in {"url_decoded_path", "url_original_path", "url_decoded_query"}
             else f"{item.value}{unit}"
         )
         lines.append((label, display_value))
@@ -186,7 +189,12 @@ def _path_traversal_evidence_lines(detection):
     if actual_index != len(detection.evidence):
         return None
     values_by_label = dict(lines)
-    if values_by_label.get("Matched pattern") not in {"../", "..\\"}:
+    if (len(set(values_by_label) & {"Request path", "Original request path"}) != 1
+            or ("Original request path" in values_by_label and (
+                values_by_label.get("Observation kind") in {None, "DECODED_PATH_PARENT_REFERENCE"}
+                or not path_reference_unassessed(detection)))):
+        return None
+    if not valid_path_evidence(values_by_label.get("Matched pattern"), values_by_label.get("Observation kind")):
         return None
     method = values_by_label.get("HTTP method")
     if method is not None and re.fullmatch(r"[A-Z]{1,16}", method) is None:
@@ -229,6 +237,9 @@ def print_detection_result(detections):
     print("Detection:")
 
     for detection_name, detection in detections.items():
+
+        if detection_name == "path_traversal" and path_reference_unassessed(detection):
+            print(f"  {PATH_UNASSESSED_NOTICE}")
 
         if not detection.is_detected:
             continue

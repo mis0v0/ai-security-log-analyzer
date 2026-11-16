@@ -86,6 +86,7 @@ class DetectionMetric:
     precision: str
     recall: str
     f1: str
+    excluded_unassessed: int = 0
 
 
 @dataclass(frozen=True)
@@ -438,10 +439,10 @@ def _case_matches(item: EvaluationScenario, projection) -> bool:
     )
 
 
-def _metric(kind: str, count: Confusion) -> DetectionMetric:
+def _metric(kind: str, count: Confusion, excluded_unassessed: int = 0) -> DetectionMetric:
     return DetectionMetric(kind, count.tp, count.fp, count.fn, count.tn, count.tp + count.fn,
                            ratio(count.tp, count.tp + count.fp), ratio(count.tp, count.tp + count.fn),
-                           ratio(2 * count.tp, 2 * count.tp + count.fp + count.fn))
+                           ratio(2 * count.tp, 2 * count.tp + count.fp + count.fn), excluded_unassessed)
 
 
 def evaluate(scenarios: tuple[EvaluationScenario, ...] = SCENARIOS) -> EvaluationSummary:
@@ -451,6 +452,7 @@ def evaluate(scenarios: tuple[EvaluationScenario, ...] = SCENARIOS) -> Evaluatio
     risk_applicable = case_applicable = 0
     unexpected_parse_total = unexpected_rejection_total = 0
     detection_counts = {kind: Confusion() for kind in DETECTION_TYPES}
+    unassessed_counts = {kind: 0 for kind in DETECTION_TYPES}
     relation_counts = {kind: Confusion() for kind in RELATION_TYPES}
     outcomes = []
     for item in scenarios:
@@ -484,6 +486,11 @@ def evaluate(scenarios: tuple[EvaluationScenario, ...] = SCENARIOS) -> Evaluatio
             raise EvaluationError("analysis_failed") from None
         if item.label_scope == "labeled":
             for kind in DETECTION_TYPES:
+                slot = next(slot for slot, name in _DETECTION_SLOTS if name == kind)
+                if not detections[kind] and any(row["detections"][slot].unassessed_reason is not None
+                       and not row["detections"][slot].is_detected for row in results.values()):
+                    unassessed_counts[kind] += 1
+                    continue
                 detection_counts[kind] = detection_counts[kind].add(
                     any(d.detection_type == kind for d in item.detections), detections[kind]
                 )
@@ -522,7 +529,7 @@ def evaluate(scenarios: tuple[EvaluationScenario, ...] = SCENARIOS) -> Evaluatio
         sum(o.passed for o in outcomes),
         sum(not o.passed for o in outcomes),
         ParserSummary(*parser_totals, parser_passes, unexpected_parse_total, unexpected_rejection_total),
-        tuple(_metric(kind, count) for kind, count in detection_counts.items()), relation_metrics,
+        tuple(_metric(kind, count, unassessed_counts[kind]) for kind, count in detection_counts.items()), relation_metrics,
         LayerSummary(risk_passes, risk_applicable - risk_passes, risk_applicable),
         LayerSummary(case_passes, case_applicable - case_passes, case_applicable),
         failures, tuple(outcomes), NOTICES, linux_evaluation,

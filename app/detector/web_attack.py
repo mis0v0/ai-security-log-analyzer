@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
 from urllib.parse import unquote
+from types import MappingProxyType
+import unicodedata
 
 from app.models.schemas import Evidence, DetectionResult
 
@@ -187,27 +189,90 @@ def detect_web_observations(events) -> dict[str, DetectionResult]:
             return result
     return result
 
+PATH_POLICY_VERSION = "path_reference_v2"
+PATH_UNASSESSED_REASON = "PATH_REFERENCE_ENCODING"
+PATH_UNASSESSED_NOTICE = "일부 Path Traversal 인코딩 관찰을 평가하지 못했습니다. 비검출을 정상이나 안전으로 해석하지 마십시오."
+PATH_OBSERVATION_LABELS = MappingProxyType({
+    "PATH_PARENT_SEGMENT": "원문 path의 부모 구성요소",
+    "DECODED_PATH_PARENT_REFERENCE": "디코딩 후 path의 부모 참조 형태",
+    "BACKSLASH_PARENT_REFERENCE": "역슬래시 부모 참조형 문자열",
+    "QUERY_REFERENCE_STRING": "질의 문자열의 부모 참조형 문자열",
+})
+_PATH_MAX_BYTES = 8192  # Project resource bound, not an HTTP/RFC limit.
+_PATH_DECODE_LAYERS = 3  # Investigation heuristic, not RFC normalization.
+_PARENT_COMPONENT = re.compile(r"(^|[/\\])(\.\.)([/\\]|$)")
+
+
+def path_reference_unassessed(result):
+    reason = result.unassessed_reason
+    if reason is not None and (type(reason) is not str or reason != PATH_UNASSESSED_REASON):
+        raise ValueError("Invalid path-reference disposition.") from None
+    return reason is not None
+
+
+def valid_path_evidence(pattern, kind=None):
+    if type(pattern) is not str:
+        return False
+    if kind is None:  # Historical v1 evidence remains readable.
+        return pattern in {"../", "..\\"}
+    if type(kind) is not str or kind not in PATH_OBSERVATION_LABELS:
+        return False
+    if kind == "QUERY_REFERENCE_STRING":
+        return pattern in {"../", "..\\"}
+    if kind == "BACKSLASH_PARENT_REFERENCE":
+        return pattern in {"../", "..\\", ".."}
+    return pattern in {"../", ".."}
+
+
+def _path_text(value):
+    if type(value) is not str or not value:
+        return False
+    try:
+        return len(value.encode("utf-8", "strict")) <= _PATH_MAX_BYTES and not any(
+            unicodedata.category(char) in {"Cc", "Cf", "Cs"} for char in value
+        )
+    except UnicodeError:
+        return False
+
+
+def _valid_escapes(value):
+    return all(char != "%" or (index + 2 < len(value)
+               and value[index + 1] in _HEX and value[index + 2] in _HEX)
+               for index, char in enumerate(value))
+
+
 def decode_url(value):
+    """Bounded traversal search view; None means unassessed, never safe/normal.
+
+    Validate original escapes strictly. A percent produced as data (%25) is
+    retained when it is not another complete escape layer. No plus conversion,
+    Unicode folding, replacement characters or other web-rule policy changes.
+    """
+    if not _path_text(value) or not _valid_escapes(value):
+        return None
     decoded = value
-
-    while True:
-        next_decoded = unquote(decoded)
-
+    for _ in range(_PATH_DECODE_LAYERS):
+        if "%" not in decoded:
+            return decoded
+        try:
+            next_decoded = unquote(decoded, encoding="utf-8", errors="strict")
+        except UnicodeError:
+            return None
+        if not _path_text(next_decoded):
+            return None
         if next_decoded == decoded:
-            break
-
+            return decoded
         decoded = next_decoded
-
+    if re.search(r"%[0-9A-Fa-f]{2}", decoded):
+        return None  # More than three transform layers: outside this policy.
     return decoded
 
 
 def is_path_traversal(path):
-    decoded_path = decode_url(path)
-
-    return (
-        "../" in decoded_path
-        or "..\\" in decoded_path
-    )
+    result = detect_path_traversal(path)
+    if not result.is_detected and path_reference_unassessed(result):
+        raise ValueError("Path-reference encoding was not assessed.") from None
+    return result.is_detected
 
 
 def detect_path_traversal(
@@ -219,96 +284,50 @@ def detect_path_traversal(
     timestamp=None,
 ):
 
+    if not _path_text(path):
+        return DetectionResult(False, None, [], PATH_UNASSESSED_REASON)
     decoded_path = decode_url(path)
 
     decoded_query = None
+    raw_query = query if _path_text(query) else None
 
-    if query:
-        decoded_query = decode_url(query)
+    if raw_query:
+        decoded_query = decode_url(raw_query)
 
-    values_to_check = [
-        decoded_path
+    match = _PARENT_COMPONENT.search(path)
+    kind = "PATH_PARENT_SEGMENT"
+    if match is None and decoded_path is not None:
+        match = _PARENT_COMPONENT.search(decoded_path)
+        kind = "DECODED_PATH_PARENT_REFERENCE"
+    if match is not None:
+        ending = match.group(3)
+        path_pattern = ".." + ending
+        if "\\" in (match.group(1), ending):
+            kind = "BACKSLASH_PARENT_REFERENCE"
+    elif ((raw_query and ("../" in raw_query or "..\\" in raw_query))
+          or (decoded_query and ("../" in decoded_query or "..\\" in decoded_query))):
+        query_view = decoded_query if decoded_query is not None else raw_query
+        path_pattern = "../" if "../" in query_view else "..\\"
+        kind = "QUERY_REFERENCE_STRING"
+    else:
+        incomplete = decoded_path is None or bool(query and decoded_query is None)
+        return DetectionResult(False, None, [], PATH_UNASSESSED_REASON if incomplete else None)
+
+    source = "path_traversal_detector"
+    evidence = [
+        Evidence("url_decoded_path" if decoded_path is not None else "url_original_path",
+                 decoded_path if decoded_path is not None else path, source, timestamp=timestamp),
+        Evidence("path_pattern", path_pattern, source, timestamp=timestamp),
     ]
-
-    if decoded_query:
-        values_to_check.append(decoded_query)
-
-    for value in values_to_check:
-
-        if (
-            "../" not in value
-            and "..\\" not in value
-        ):
-            continue
-
-        if "../" in value:
-            path_pattern = "../"
-        else:
-            path_pattern = "..\\"
-
-        evidence = [
-            Evidence(
-                type="url_decoded_path",
-                value=decoded_path,
-                source="path_traversal_detector",
-                timestamp=timestamp,
-            ),
-            Evidence(
-                type="path_pattern",
-                value=path_pattern,
-                source="path_traversal_detector",
-                timestamp=timestamp,
-            ),
-        ]
-
-        if decoded_query:
-            evidence.append(
-                Evidence(
-                    type="url_decoded_query",
-                    value=decoded_query,
-                    source="path_traversal_detector",
-                    timestamp=timestamp,
-                )
-            )
-
-        if method:
-            evidence.append(
-                Evidence(
-                    type="http_method",
-                    value=method,
-                    source="path_traversal_detector",
-                    timestamp=timestamp,
-                )
-            )
-
-        if status_code is not None:
-            evidence.append(
-                Evidence(
-                    type="http_status_code",
-                    value=status_code,
-                    source="path_traversal_detector",
-                    timestamp=timestamp,
-                )
-            )
-
-        if response_size is not None:
-            evidence.append(
-                Evidence(
-                    type="http_response_size",
-                    value=response_size,
-                    source="path_traversal_detector",
-                    timestamp=timestamp,
-                )
-            )
-
-        return DetectionResult(
-            is_detected=True,
-            detection_type="path_traversal",
-            evidence=evidence,
-        )
-
-    return DetectionResult(
-        is_detected=False,
-        detection_type=None,
-        evidence=[],
-    )
+    for name, value in (
+        ("url_decoded_query", decoded_query or None),
+        ("http_method", method or None),
+        ("http_status_code", status_code),
+        ("http_response_size", response_size),
+    ):
+        if value is not None:
+            evidence.append(Evidence(name, value, source, timestamp=timestamp))
+    evidence.append(Evidence("path_observation_kind", kind, source, timestamp=timestamp))
+    incomplete = decoded_path is None or bool(query and decoded_query is None)
+    return DetectionResult(True, "path_traversal", evidence,
+                           PATH_UNASSESSED_REASON if incomplete else None)

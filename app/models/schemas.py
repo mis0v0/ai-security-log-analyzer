@@ -129,6 +129,8 @@ class DetectionResult:
     is_detected: bool
     detection_type: str | None
     evidence: list[Evidence]
+    # Internal processing disposition; never a raw-input or public DTO field.
+    unassessed_reason: str | None = None
 
 
 # =========================

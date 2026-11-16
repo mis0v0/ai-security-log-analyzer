@@ -18,6 +18,7 @@ from app.analyzer.incident_case_projection import (
     build_investigation_case_projection,
 )
 from app.models.schemas import DetectionResult, Evidence
+from app.detector.web_attack import valid_path_evidence, path_reference_unassessed
 from app.detector.brute_force import (
     AnalysisRunOwner,
     BruteWindowContext,
@@ -387,21 +388,24 @@ def _authentication_detection(
 
 
 def _path_detection(detection: DetectionResult) -> DetectionResult:
-    if type(detection.evidence) is not list or not 2 <= len(detection.evidence) <= 6:
+    if type(detection.evidence) is not list or not 2 <= len(detection.evidence) <= 7:
         _fail("invalid_detection_contract")
     seen = set()
     pattern = None
+    kind = None
     timestamps = []
     timestamps_valid = True
     for raw_item in detection.evidence:
         item = _evidence_item(raw_item, "path_traversal_detector")
         if item.type in seen or item.type not in {
             "url_decoded_path",
+            "url_original_path",
             "path_pattern",
             "url_decoded_query",
             "http_method",
             "http_status_code",
             "http_response_size",
+            "path_observation_kind",
         }:
             _fail("invalid_detection_contract")
         seen.add(item.type)
@@ -417,19 +421,27 @@ def _path_detection(detection: DetectionResult) -> DetectionResult:
                 timestamps.append(timestamp)
         if item.type in {
             "url_decoded_path",
+            "url_original_path",
             "path_pattern",
             "url_decoded_query",
             "http_method",
+            "path_observation_kind",
         }:
             if type(item.value) is not str:
                 _fail("invalid_detection_contract")
             if item.type == "path_pattern":
-                if item.value not in {"../", "..\\"}:
-                    _fail("invalid_detection_contract")
                 pattern = item
+            elif item.type == "path_observation_kind":
+                kind = item.value
         else:
             _non_negative_int(item.value, "invalid_detection_contract")
-    if not {"url_decoded_path", "path_pattern"}.issubset(seen):
+    if ("path_pattern" not in seen
+            or len(seen & {"url_decoded_path", "url_original_path"}) != 1
+            or ("url_original_path" in seen and (
+                kind in {None, "DECODED_PATH_PARENT_REFERENCE"}
+                or not path_reference_unassessed(detection)))):
+        _fail("invalid_detection_contract")
+    if pattern is None or not valid_path_evidence(pattern.value, kind):
         _fail("invalid_detection_contract")
 
     approved_evidence = []
@@ -445,7 +457,7 @@ def _path_detection(detection: DetectionResult) -> DetectionResult:
             "path_traversal_detector",
             timestamp=timestamps[0],
         ))
-    return DetectionResult(True, "path_traversal", approved_evidence)
+    return DetectionResult(True, "path_traversal", approved_evidence, detection.unassessed_reason)
 
 
 def _detection_input(
@@ -461,10 +473,16 @@ def _detection_input(
         _fail("invalid_detection_contract")
     if type(raw_detection.is_detected) is not bool:
         _fail("invalid_detection_contract")
+    try:
+        incomplete = path_reference_unassessed(raw_detection)
+    except ValueError:
+        _fail("invalid_detection_contract")
+    if incomplete and slot != "path_traversal":
+        _fail("invalid_detection_contract")
     if not raw_detection.is_detected:
         if raw_detection.detection_type is not None or raw_detection.evidence != []:
             _fail("invalid_detection_contract")
-        detection = DetectionResult(False, None, [])
+        detection = DetectionResult(False, None, [], raw_detection.unassessed_reason)
     else:
         if type(raw_detection.detection_type) is not str:
             _fail("invalid_detection_contract")

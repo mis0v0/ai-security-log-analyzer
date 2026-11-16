@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"synthetic_boundary_corpus: {summary.passed_scenarios}/{summary.scenario_count} scenarios passed")
         for metric in summary.detection_metrics:
-            print(f"detection {metric.detection_type}: TP={metric.tp} FP={metric.fp} FN={metric.fn} TN={metric.tn} precision={metric.precision} recall={metric.recall} F1={metric.f1} support={metric.support}")
+            print(f"detection {metric.detection_type}: TP={metric.tp} FP={metric.fp} FN={metric.fn} TN={metric.tn} precision={metric.precision} recall={metric.recall} F1={metric.f1} support={metric.support} excluded_unassessed={metric.excluded_unassessed}")
         for metric in summary.correlation_metrics:
             print(f"correlation {metric.relation_type}: TP={metric.tp} FP={metric.fp} FN={metric.fn} precision={metric.precision} recall={metric.recall} F1={metric.f1}")
         print(f"parser: {summary.parser_summary.parsed}/{summary.parser_summary.input_lines} parsed; ignored={summary.parser_summary.ignored}; rejected={summary.parser_summary.failed}; unexpected_parse={summary.parser_summary.unexpected_parse_count}; unexpected_rejection={summary.parser_summary.unexpected_rejection_count}")

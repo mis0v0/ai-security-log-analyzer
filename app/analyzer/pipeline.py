@@ -9,7 +9,9 @@ from app.detector.brute_force import (
     brute_evidence_matches_context,
 )
 from app.detector.password_spray import detect_password_spray
-from app.detector.web_attack import detect_path_traversal, detect_web_observations
+from app.detector.web_attack import (
+    detect_path_traversal, detect_web_observations, PATH_UNASSESSED_REASON,
+)
 from app.correlation.attack_chain import (
     correlate_authentication_transition,
     correlate_post_authentication_activity,
@@ -184,6 +186,8 @@ def detect_attacks_with_context(logs, run_owner: AnalysisRunOwner):
                 spray_result
             )
 
+    selected_path_keys = {}
+    unassessed_path_ips = set()
     for log in logs:
 
         if log.src_ip is None:
@@ -204,13 +208,32 @@ def detect_attacks_with_context(logs, run_owner: AnalysisRunOwner):
             log.timestamp,
         )
 
+        if path_result.unassessed_reason is not None:
+            unassessed_path_ips.add(log.src_ip)
         if path_result.is_detected:
-
+            kind = next((e.value for e in path_result.evidence if e.type == "path_observation_kind"), None)
+            if kind is not None:
+                # One per-IP slot: earliest observation, then a fixed category
+                # and metadata order. Private targets only break exact ties;
+                # they are never identifiers, evidence exports or risk inputs.
+                rank = ("PATH_PARENT_SEGMENT", "DECODED_PATH_PARENT_REFERENCE",
+                        "BACKSLASH_PARENT_REFERENCE", "QUERY_REFERENCE_STRING").index(kind)
+                key = (log.timestamp, rank, log.http.method,
+                       log.http.status_code if log.http.status_code is not None else -1,
+                       log.http.response_size if log.http.response_size is not None else -1,
+                       log.http.path, log.http.query or "")
+                if log.src_ip in selected_path_keys and key >= selected_path_keys[log.src_ip]:
+                    continue
+                selected_path_keys[log.src_ip] = key
             result = results[log.src_ip]
 
             result["detections"]["path_traversal"] = (
                 path_result
             )
+
+    for ip in unassessed_path_ips:
+        # The slot represents this IP's input set, not just its selected event.
+        results[ip]["detections"]["path_traversal"].unassessed_reason = PATH_UNASSESSED_REASON
 
     for ip, result in results.items():
         result["detections"].update(

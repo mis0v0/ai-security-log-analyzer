@@ -257,6 +257,8 @@ def _observed(scenario: dict[str, Any], path: Path) -> bool:
         if result is None:
             raise DetectorAccuracyError("analysis_failed")
         detection = result["detections"][DETECTION_SLOTS[scenario["detector"]]]
+        if detection.unassessed_reason is not None and not detection.is_detected:
+            raise DetectorAccuracyError("analysis_failed")
         return detection.is_detected is True
     except DetectorAccuracyError:
         raise
