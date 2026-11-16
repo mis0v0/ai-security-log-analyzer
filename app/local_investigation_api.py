@@ -44,6 +44,7 @@ from app.sample_investigation_api import (
     _EMPTY_WARNINGS, _case, _independent, _report_export,
 )
 from app.public_identifiers import subject_aliases
+from app.detector.web_attack import path_reference_unassessed, PATH_UNASSESSED_NOTICE
 
 
 _FIELDS = ("application_file", "ssh_file", "access_file")
@@ -567,7 +568,12 @@ def _local_response(
             html_report_available=True, llm_summary_available=False,
             linux_audit_aggregate_available=False, actual_log_upload_available=True,
         ),
-        bounded_warnings=_EMPTY_WARNINGS if summary.case_count == 0 else (),
+        bounded_warnings=(_EMPTY_WARNINGS if summary.case_count == 0 else ()) + (
+            (PATH_UNASSESSED_NOTICE,) if any(
+                path_reference_unassessed(item["detections"]["path_traversal"])
+                for item in results.values()
+            ) else ()
+        ),
         report_export=report_export,
         input_quality=input_quality,
     )

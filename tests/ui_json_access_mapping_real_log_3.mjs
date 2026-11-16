@@ -24,7 +24,8 @@ let page;
 const canary = 'UNSELECTED_MAPPING_VALUE_CANARY';
 const rows = ['/normal?q=green+tea', '/download?file=..%2Fprivate',
   '/catalog?id=8%27%20OR%202%3D2', '/preview?x=%3Cscript%3Echeck()%3C/script%3E',
-  '/detect2-private/..', '/detect2-private../leaf']
+  '/detect2-private/..', '/detect2-private../leaf',
+  '/detect2-private/../%FF', '/detect2-private/%FF']
   .map((target, i) => ({when: '2026-04-09T10:00:00+09:00', peer: `192.0.2.${171 + i}`,
     verb: 'GET', target, code: 200, unselected: canary}));
 const mapping = [['timestamp', 'when'], ['source-ip', 'peer'], ['method', 'verb'], ['request-uri', 'target'], ['status', 'code']];
@@ -110,12 +111,14 @@ try {
   const response = await success;
   assert.equal(response.status(), 200);
   const body = await response.json();
-  assert.equal(body.result.analysis_summary.supported_detection_count, 4);
-  assert.equal(body.result.input_quality.aggregate.recognized_lines, 6);
+  assert.equal(body.result.analysis_summary.supported_detection_count, 5);
+  assert.equal(body.result.input_quality.aggregate.recognized_lines, 8);
+  assert.ok(body.result.bounded_warnings.some((text) => text.includes('인코딩 관찰을 평가하지 못했습니다')));
   assert.equal(JSON.stringify(body).includes('detect2-private'), false);
   assert.equal(JSON.stringify(body).includes(canary), false);
   assert.equal(JSON.stringify(body).includes('192.0.2.171'), false);
   await page.locator('#results').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#path-encoding-warning').isVisible(), true);
   assert.match(await page.locator('#results').textContent(), /실제 서버 해석과 공격 의도는 미확인/);
   assert.equal((await page.locator('#results').textContent()).includes('detect2-private'), false);
   assert.equal(await page.locator('#json-mapping-result-notice').isVisible(), true);
@@ -153,6 +156,7 @@ try {
   assert.equal((await textSuccess).status(), 200);
   await page.locator('#results').waitFor({state: 'visible'});
   assert.equal(await page.locator('#json-mapping-result-notice').isHidden(), true);
+  assert.equal(await page.locator('#path-encoding-warning').isHidden(), true);
   await page.locator('#nav-local').click();
   await page.locator('#input-mode-file').check();
   for (const [id, name] of [['application-file', 'brute_force.log'], ['ssh-file', 'ssh_auth.log'], ['access-file', 'web_shell.log']])

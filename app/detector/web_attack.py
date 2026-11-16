@@ -190,6 +190,8 @@ def detect_web_observations(events) -> dict[str, DetectionResult]:
     return result
 
 PATH_POLICY_VERSION = "path_reference_v2"
+PATH_UNASSESSED_REASON = "PATH_REFERENCE_ENCODING"
+PATH_UNASSESSED_NOTICE = "일부 Path Traversal 인코딩 관찰을 평가하지 못했습니다. 비검출을 정상이나 안전으로 해석하지 마십시오."
 PATH_OBSERVATION_LABELS = MappingProxyType({
     "PATH_PARENT_SEGMENT": "원문 path의 부모 구성요소",
     "DECODED_PATH_PARENT_REFERENCE": "디코딩 후 path의 부모 참조 형태",
@@ -199,6 +201,13 @@ PATH_OBSERVATION_LABELS = MappingProxyType({
 _PATH_MAX_BYTES = 8192  # Project resource bound, not an HTTP/RFC limit.
 _PATH_DECODE_LAYERS = 3  # Investigation heuristic, not RFC normalization.
 _PARENT_COMPONENT = re.compile(r"(^|[/\\])(\.\.)([/\\]|$)")
+
+
+def path_reference_unassessed(result):
+    reason = result.unassessed_reason
+    if reason is not None and (type(reason) is not str or reason != PATH_UNASSESSED_REASON):
+        raise ValueError("Invalid path-reference disposition.") from None
+    return reason is not None
 
 
 def valid_path_evidence(pattern, kind=None):
@@ -260,7 +269,10 @@ def decode_url(value):
 
 
 def is_path_traversal(path):
-    return detect_path_traversal(path).is_detected
+    result = detect_path_traversal(path)
+    if not result.is_detected and path_reference_unassessed(result):
+        raise ValueError("Path-reference encoding was not assessed.") from None
+    return result.is_detected
 
 
 def detect_path_traversal(
@@ -272,18 +284,19 @@ def detect_path_traversal(
     timestamp=None,
 ):
 
+    if not _path_text(path):
+        return DetectionResult(False, None, [], PATH_UNASSESSED_REASON)
     decoded_path = decode_url(path)
-    if decoded_path is None:
-        return DetectionResult(False, None, [])
 
     decoded_query = None
+    raw_query = query if _path_text(query) else None
 
-    if query:
-        decoded_query = decode_url(query)
+    if raw_query:
+        decoded_query = decode_url(raw_query)
 
     match = _PARENT_COMPONENT.search(path)
     kind = "PATH_PARENT_SEGMENT"
-    if match is None:
+    if match is None and decoded_path is not None:
         match = _PARENT_COMPONENT.search(decoded_path)
         kind = "DECODED_PATH_PARENT_REFERENCE"
     if match is not None:
@@ -291,15 +304,19 @@ def detect_path_traversal(
         path_pattern = ".." + ending
         if "\\" in (match.group(1), ending):
             kind = "BACKSLASH_PARENT_REFERENCE"
-    elif decoded_query and ("../" in decoded_query or "..\\" in decoded_query):
-        path_pattern = "../" if "../" in decoded_query else "..\\"
+    elif ((raw_query and ("../" in raw_query or "..\\" in raw_query))
+          or (decoded_query and ("../" in decoded_query or "..\\" in decoded_query))):
+        query_view = decoded_query if decoded_query is not None else raw_query
+        path_pattern = "../" if "../" in query_view else "..\\"
         kind = "QUERY_REFERENCE_STRING"
     else:
-        return DetectionResult(False, None, [])
+        incomplete = decoded_path is None or bool(query and decoded_query is None)
+        return DetectionResult(False, None, [], PATH_UNASSESSED_REASON if incomplete else None)
 
     source = "path_traversal_detector"
     evidence = [
-        Evidence("url_decoded_path", decoded_path, source, timestamp=timestamp),
+        Evidence("url_decoded_path" if decoded_path is not None else "url_original_path",
+                 decoded_path if decoded_path is not None else path, source, timestamp=timestamp),
         Evidence("path_pattern", path_pattern, source, timestamp=timestamp),
     ]
     for name, value in (
@@ -311,4 +328,6 @@ def detect_path_traversal(
         if value is not None:
             evidence.append(Evidence(name, value, source, timestamp=timestamp))
     evidence.append(Evidence("path_observation_kind", kind, source, timestamp=timestamp))
-    return DetectionResult(True, "path_traversal", evidence)
+    incomplete = decoded_path is None or bool(query and decoded_query is None)
+    return DetectionResult(True, "path_traversal", evidence,
+                           PATH_UNASSESSED_REASON if incomplete else None)

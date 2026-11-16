@@ -10,7 +10,10 @@ from app.detector.shared_memory_execution import (
     SharedMemoryExecutionReviewSummary,
 )
 from app.models.schemas import DetectionResult, Evidence
-from app.detector.web_attack import PATH_OBSERVATION_LABELS, valid_path_evidence
+from app.detector.web_attack import (
+    PATH_OBSERVATION_LABELS, valid_path_evidence, path_reference_unassessed,
+    PATH_UNASSESSED_NOTICE,
+)
 from app.detector.brute_force import is_owned_analysis_result
 from app.analyzer.web_observation_projection import (
     WEB_TYPES, WEB_DISPLAY, WEB_LIMITATION, WEB_NEXT_STEP,
@@ -463,6 +466,7 @@ def _authentication_evidence(detection):
 def _path_traversal_evidence(detection):
     expected_order = (
         "url_decoded_path",
+        "url_original_path",
         "path_pattern",
         "url_decoded_query",
         "http_method",
@@ -488,11 +492,13 @@ def _path_traversal_evidence(detection):
         ):
             _fail()
         by_type[item.type] = item
-    if not {"url_decoded_path", "path_pattern"}.issubset(by_type):
+    if ("path_pattern" not in by_type
+            or len(set(by_type) & {"url_decoded_path", "url_original_path"}) != 1):
         _fail()
 
     for evidence_type in (
         "url_decoded_path",
+        "url_original_path",
         "path_pattern",
         "url_decoded_query",
         "http_method",
@@ -504,6 +510,10 @@ def _path_traversal_evidence(detection):
         if evidence_type in by_type:
             _strict_non_negative_int(by_type[evidence_type].value)
     kind = by_type["path_observation_kind"].value if "path_observation_kind" in by_type else None
+    if "url_original_path" in by_type and (
+            kind in {None, "DECODED_PATH_PARENT_REFERENCE"}
+            or not path_reference_unassessed(detection)):
+        _fail()
     if not valid_path_evidence(by_type["path_pattern"].value, kind):
         _fail()
     if "http_method" in by_type and re.fullmatch(
@@ -543,6 +553,12 @@ def _project_detections(detections):
         if type(detection) is not DetectionResult:
             _fail()
         if type(detection.is_detected) is not bool:
+            _fail()
+        try:
+            incomplete = path_reference_unassessed(detection)
+        except ValueError:
+            _fail()
+        if incomplete and slot != "path_traversal":
             _fail()
         if not detection.is_detected:
             if detection.detection_type is not None:
@@ -898,6 +914,7 @@ def build_investigation_report_projection(
             _risk_assessment(result),
             unsupported_detection,
             unsupported_correlation,
+            path_reference_unassessed(result["detections"]["path_traversal"]),
         ))
         candidate_groups.append(candidates)
 
@@ -911,6 +928,7 @@ def build_investigation_report_projection(
         risk,
         unsupported_detection,
         unsupported_correlation,
+        path_incomplete,
     ) in prepared:
         correlations = _project_correlations(candidates, aliases)
         observation_types = {
@@ -926,7 +944,10 @@ def build_investigation_report_projection(
             risk_assessment=risk,
             unsupported_detection_observed=unsupported_detection,
             unsupported_correlation_observed=unsupported_correlation,
-            limitations=_limitations(observation_types),
+            limitations=_limitations(observation_types) + (
+                (InterpretationLimitationItem("path_reference_encoding_unassessed", PATH_UNASSESSED_NOTICE),)
+                if path_incomplete else ()
+            ),
             next_steps=_next_steps(observation_types),
         ))
 

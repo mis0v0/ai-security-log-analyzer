@@ -35,3 +35,5 @@ DETECT-2는 부모 구성요소·decoding·역슬래시·질의 문자열을 구
 Phase 8의 네 새 웹 관찰은 trusted parser event의 원래 path/query를 canonical target 계산에 일시적으로 사용하지만, 공개 경계에는 고정 pattern ID의 한국어 category·횟수·시간·위험도·한계만 복사한다. Deprecated legacy API도 새 type별 explicit safe model을 사용하며 raw evidence를 통과시키지 않는다. 기존 Path Traversal의 원래 path/query 제거 정책과 동일하다. [웹 요청 관찰 설계](web_attack_observation_design.md)에 패턴과 오탐·미탐 한계를 기록했다.
 
 Trusted internal dictionary의 직접 `repr(raw_result)`은 원문을 노출할 수 있다. 개발자는 이를 로그·exception·테스트 실패 diff·진단 preview에 넣지 않아야 한다. Legacy upload 자체는 기존 whole-file read와 suffix 검사를 유지하므로 public/hosted upload로 사용하지 않는다. 새로운 versioned local endpoint의 loopback·bounded upload 계약과 혼동하지 않는다.
+
+PR #7 P2는 인코딩 미평가를 기존 고정 warning/limitation 필드로 구분한다. 내부 `unassessed_reason`과 `url_original_path`를 API 필드로 직렬화하지 않는다. 디코딩할 수 없는 원문은 decoded Evidence로 표시하지 않으며 CLI Evidence에서도 가린다. 미평가 음성의 legacy `pattern_category`만 고정 안내로 채운다. 새로운 원문·IP·query·개수는 공개하지 않는다. CLI의 기존 validated-IP subject header 계약은 유지한다.

@@ -2610,6 +2610,8 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     textScopeNotice.hidden = textScope === null;
     textScopeSourceLabel.textContent = textScope === null ? "" : TEXT_SOURCE_LABELS_36_8C[textScope.source];
     renderSummary(data);
+    const warning = document.getElementById("path-encoding-warning");
+    warning.hidden = !data.bounded_warnings.includes(warning.textContent);
     window.inputQualityUi36_12b.render(document.getElementById("input-quality-summary-36-12b"),
       data.input_quality || null, textScope?.source || null);
     renderCaseOverview(data.cases);

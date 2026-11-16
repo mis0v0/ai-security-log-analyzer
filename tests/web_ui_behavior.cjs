@@ -69,7 +69,7 @@ const ids = [
   "nav-start", "nav-audit", "nav-live", "nav-results"
   ,"input-mode-mapping", "json-mapping-panel", "json-mapping-text", "json-mapping-discover",
   "json-mapping-clear", "json-mapping-fields", "json-mapping-confirm", "json-mapping-preview",
-  "json-mapping-error", "json-mapping-status", "json-mapping-result-notice", "json-map-timestamp",
+  "json-mapping-error", "json-mapping-status", "json-mapping-result-notice", "path-encoding-warning", "json-map-timestamp",
   "json-map-source-ip", "json-map-method", "json-map-request-uri", "json-map-status"
   ,"local-action-card", "audit-action-card", "audit-choice-button", "linux-audit-file",
   "workspace-current-title", "workspace-current-description"
@@ -127,6 +127,8 @@ function makeApp(initial, hostname = "127.0.0.1") {
   nodes["log-text"].tagName = "textarea";
   nodes["text-input-scope-notice"].hidden = true;
   nodes["text-error"].hidden = true;
+  nodes["path-encoding-warning"].textContent = "일부 Path Traversal 인코딩 관찰을 평가하지 못했습니다. 비검출을 정상이나 안전으로 해석하지 마십시오.";
+  nodes["path-encoding-warning"].hidden = true;
   let response = initial;
   let httpStatus = 200;
   let fetchCount = 0;

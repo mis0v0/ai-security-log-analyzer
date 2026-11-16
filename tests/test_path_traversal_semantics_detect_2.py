@@ -72,6 +72,7 @@ def check_case(case):
     if expected is None:
         assert decode_url(path) is None
         assert not result.is_detected and result.evidence == []
+        assert result.unassessed_reason == "PATH_REFERENCE_ENCODING"
         return
     assert result.is_detected is expected
     if expected:

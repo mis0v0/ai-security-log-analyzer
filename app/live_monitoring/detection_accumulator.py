@@ -155,6 +155,10 @@ def _validate_detection(detection: DetectionResult, expected_type: str) -> None:
     if (type(detection) is not DetectionResult or type(detection.is_detected) is not bool
         or type(detection.evidence) is not list):
         raise LiveDetectionError("DETECTION_INVARIANT_FAILURE")
+    # Live has no disposition channel: fail closed, never publish a negative
+    # count as though an incomplete traversal evaluation were complete.
+    if detection.unassessed_reason is not None:
+        raise LiveDetectionError("DETECTION_INVARIANT_FAILURE")
     if detection.is_detected:
         if detection.detection_type != expected_type or not detection.evidence:
             raise LiveDetectionError("DETECTION_INVARIANT_FAILURE")

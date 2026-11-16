@@ -120,6 +120,7 @@ _REPORT_LEVEL_LIMITATION_IDS = frozenset({
 _SUBJECT_LIMITATION_IDS = frozenset({
     "spraying_like_not_credential_reuse",
     "path_traversal_not_file_disclosure",
+    "path_reference_encoding_unassessed",
 }) | frozenset(f"{kind}_not_success" for kind in WEB_TYPES)
 _NEXT_STEP_PURPOSES = (
     ("authentication_failure", ("review_authentication_failures",)),

@@ -278,7 +278,7 @@ Query의 `file=../…`와 `q=../…`는 같은 C 관찰이다. 파라미터 이�
 
 `decode_url()`은 각 component에 UTF-8 8,192 bytes, 최대 3 transform layer를 적용한다. 값은 표준 임계값이 아닌 고정 엔지니어링 자원 제한이다. 최대 3번의 선형 탐색이며 URL decoding이 입력 크기를 증폭시키지 않는다. 원래 `%HH`를 검사하고 UTF-8 strict decoding을 사용한다. `%25`에서 나온 literal percent는 보존하고 plus를 공백으로 바꾸지 않는다. control/format/surrogate, malformed escape, invalid UTF-8, 범위 초과는 `None`으로 **미평가** 처리한다. 잘못된 encoding을 replacement 문자로 손실 복구하지 않는다. 다른 웹 Detector의 `_bounded_decode()`는 변경하지 않았다.
 
-지원 범위 밖은 정상·안전·TN이 아니다. 기존 DetectionResult의 non-match는 이 규칙의 지원된 관찰이 없다는 뜻만 가진다. 별도 미평가 건수를 공개하거나 입력 인식 완료를 전체 규칙 평가 완료로 바꾸지 않는다. 원문에 분명한 참조와 잘못된 encoding이 섞인 경우도 이 strict profile 밖일 수 있다. 4단계 이상 encoding·Unicode/backend 변형은 회피/미관찰 가능성이 남는다. Parser가 먼저 거부한 입력도 detector 음성으로 세지 않는다.
+지원 범위 밖은 정상·안전·TN이 아니다. 기존 DetectionResult의 non-match는 이 규칙의 지원된 관찰이 없다는 뜻만 가진다. 별도 미평가 건수를 공개하거나 입력 인식 완료를 전체 규칙 평가 완료로 바꾸지 않는다. 원문에 분명한 참조와 잘못된 encoding이 섞이면 decoding은 profile 밖이다. P2 보정 이후에는 독립적인 원문 관찰을 보존하고 encoding 미평가 사유를 별도로 전달한다. 4단계 이상 encoding·Unicode/backend 변형은 회피/미관찰 가능성이 남는다. Parser가 먼저 거부한 입력도 detector 음성으로 세지 않는다.
 
 ### 독립 합성 사례와 변경 전후
 
@@ -298,4 +298,31 @@ Query의 `file=../…`와 `q=../…`는 같은 C 관찰이다. 파라미터 이�
 
 DETECT-1 전체 fixture bytes·manifest·labels·hashes는 불변이다. `FROZEN_INTERNAL_LABEL_AGREEMENT_ONLY`와 혼합 라벨 제외 규칙도 그대로다. `tests/detect1_path_policy_v1.py`의 세 함수 source tail은 기준 commit `b0a5dcb4b56101e1f20312527da1bbe3664ef196`과 동일하며 SHA-256 `8473bd6994e5e466b626909b385a023001062ec33661d7aed9f01d55def1a976`로 검사한다. `app/`은 이 replay helper를 import하지 않는다. 기존 모든 assertion·3/4/3/1 결과는 v1에 대해 보존하고 v2는 위 별도 명제로 검증한다. unbounded v1 decoder는 고정 비민감 historical fixture 재현 전용이다.
 
-Snapshot은 현재 탐지 성능 보고서가 아니라 기존 auth counterfactual 결과다. 37개 source pin 중 변경된 5개만 실제 소스 hash로 갱신하며 pin 수·payload schema·13,783 bytes·기존 asset SHA-256을 유지한다. 이전 pin 거부, 신규 pin 검증, 추가 필드·재봉인 변조 거부, 전달 기본 OFF를 계속 검사한다. S1 HOLD와 운영 NO_GO는 변경하지 않는다. 추가 backend telemetry·승인 맥락·real-world 평가 없이 서버 취약점·공격 성공·운영 탐지율을 주장할 수 없다.
+Snapshot은 현재 탐지 성능 보고서가 아니라 기존 auth counterfactual 결과다. 초기 DETECT-2에서는 37개 source pin 중 변경된 5개만 실제 소스 hash로 갱신했으며 pin 수·payload schema·13,783 bytes·기존 asset SHA-256을 유지한다. 이전 pin 거부, 신규 pin 검증, 추가 필드·재봉인 변조 거부, 전달 기본 OFF를 계속 검사한다. S1 HOLD와 운영 NO_GO는 변경하지 않는다. 추가 backend telemetry·승인 맥락·real-world 평가 없이 서버 취약점·공격 성공·운영 탐지율을 주장할 수 없다.
+
+### PR #7 P2 — 원문 관찰과 인코딩 평가 상태 분리
+
+초기 v2는 `decode_url(path) is None`에서 즉시 일반 음성을 반환했다. 이는 다른 부분의 잘못된 escape/UTF-8 때문에 이미 관찰되는 완전한 ASCII `..`를 억제했다. 또한 미평가가 ordinary negative와 구별되지 않았다. RFC 3986 §2.1/§3.3/§3.4와 위 OWASP·CWE 근거를 다시 확인했다. 전체 URI가 적합하거나 backend가 해석한다고 주장하지 않고, 제한된 원문 문자열에서 독립적으로 성립하는 구성요소 관찰을 보존한다.
+
+`DetectionResult`에 내부 optional `unassessed_reason` 하나를 추가했다. 허용 값은 `None` 또는 고정 코드 `PATH_REFERENCE_ENCODING`뿐이다. 이유는 입력·경로·query·개수·IP를 담지 않는다. 이 필드는 API DTO에 추가되지 않는다.
+
+| 상태 | `is_detected` | `unassessed_reason` | 해석 |
+| --- | --- | --- | --- |
+| 지원 범위의 음성 | false | None | 선언된 문자열 관찰 없음. 안전 판정 아님 |
+| 양성 근거 없는 미평가 | false | 고정 코드 | encoded 관찰 판단 불가. TN이 아님 |
+| 원문/지원된 view에서 확정 관찰 + 일부 미평가 | true | 고정 코드 | 관찰은 유지하지만 다른 인코딩 평가가 완료됐다는 뜻은 아님 |
+| 지원 범위에서 관찰 | true | None | 선언된 관찰만 확인. backend·의도·성공 미확정 |
+
+Path와 query의 원문 관찰은 decoding 성공을 전제로 하지 않는다. 기존 자원/문자 한도 안에서 path는 완전한 부모 구성요소, query는 기존 `../`·`..\\` lexical 관찰만 찾는다. 원문 query에서도 의미를 추측하지 않는다. Decoding이 불가능한 path는 새 **private** Evidence `url_original_path`로 명시하고, 이를 `url_decoded_path`라고 이름 붙이지 않는다. 둘은 정확히 하나만 허용하며, original path로 decoded-path kind를 주장할 수 없다. 정상 decoding 결과와 기존 v1 Evidence는 그대로 읽는다. Replacement character를 사용하지 않는다.
+
+공개 API의 key/schema는 유지한다. Legacy의 미평가 음성은 기존 `pattern_category`에 고정된 ‘인코딩 관찰 평가 미완료’를 표시하고 risk limitation에도 고정 안내를 추가한다. 로컬 investigation은 기존 `bounded_warnings`, HTML/LLM용 projection은 기존 limitation, CLI Evidence는 고정 안내를 사용한다. 원문·미선택 JSON 필드·잘못된 escape 값은 내보내지 않는다. CLI의 기존 검증된 IP subject header는 변경하지 않았으며 Evidence/notice에 새 IP를 넣지 않는다. bool만 읽는 소비자는 지원 음성과 미평가를 구별할 수 없으므로 함께 제공되는 category/경고를 읽어야 한다.
+
+동일 IP에 미평가 레코드가 하나라도 있으면 대표 관찰에 관계없이 고정 사유를 보존한다. 기존 가장 이른 대표 관찰 선택과 입력 순서 불변성은 유지한다. 이 상태는 해당 IP 입력 집합의 인코딩 미평가를 뜻하며 선택된 이벤트의 성공/실패나 위험도를 추가 추정하지 않는다. Risk·Correlation 계산식은 그대로다. Live에는 미평가 전달 계약이 없으므로 기존 invariant failure로 prepare를 거부하며 결과·history를 commit하지 않는다. 새 live schema나 publication을 추가하지 않는다.
+
+CLF와 고정 Nginx JSON Parser는 `/a/../%FF`, `/a/../%GG`, `/a/%2525252e%2525252e/` 같은 문자열을 정상화할 수 있다. 승인형 mapping은 기존 URI 검증 때문에 `%GG`는 worker 전에 거부한다. 이 parser 차이를 변경하지 않는다. `%FF`·깊은 encoding은 mapping에서 정상화돼도 detector의 encoded-reference 평가가 미완료일 수 있다. Parser 인식 완료는 모든 규칙 평가 완료가 아니다.
+
+`tests/test_path_traversal_p2.py`의 focused RED는 6 failed / 3 passed였다. 원문 관찰 유실과 미평가→일반 음성 축약을 재현했다. 예외로 요청 전체를 중단하는 방안은 production 변경 전에 검토했으나, 기존 malformed-query 사례의 다른 웹 규칙 분석까지 차단하므로 채택하지 않았다. 고정 상태와 기존 공개 경고 경로로 보정했다. 테스트 오류에는 source-derived 값 대신 고정 메시지와 고정 case ID를 사용한다.
+
+평가의 fixture·라벨은 변경하지 않는다. 기존 79개 중 `web_sql_malformed_percent`는 SQL lexical 음성을 그대로 평가하되 Path Traversal의 encoded-query 음성을 입증하지 못한다. 따라서 해당 규칙 TN을 **67→66**, 신규 `excluded_unassessed=1`로 명시한다. TP=2/FP=0/FN=0과 다른 규칙의 분모는 유지한다. 평가 CLI의 기존 metric에 이 제외 수를 추가하며 text/JSON 둘 다 표시한다. 이는 점수 향상이나 라벨 변경이 아니라 미평가를 TN에서 제거한 것이다. 46개 detector-accuracy evaluator는 unassessed non-match를 만나면 기존 bounded `analysis_failed`로 중단하여 TN으로 세지 않는다. 기존 46개에는 이 제외 입력이 없어 결과가 유지된다.
+
+DETECT-1의 동결 bytes·manifest·라벨·v1 replay는 불변이다. Snapshot 13,783 bytes도 재생성하지 않는다. P2에서 수정된 기존 pinned 소스 6개의 정확한 hash만 갱신하고 pin 수 37개를 유지한다. 미평가 안내는 공격 판단도 안전 판단도 아니며 운영 NO_GO와 S1 HOLD를 변경하지 않는다.

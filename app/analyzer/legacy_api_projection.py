@@ -20,6 +20,7 @@ from app.models.schemas import (
     LegacyRiskProjection,
 )
 from app.public_identifiers import subject_aliases
+from app.detector.web_attack import PATH_UNASSESSED_NOTICE
 from app.analyzer.web_observation_projection import (
     WEB_TYPES, WEB_PATTERN_LABELS, WebObservationEvidence,
     WebObservationProjectionError, validate_web_evidence,
@@ -111,6 +112,9 @@ def _detections(row) -> dict[str, LegacyDetectionProjection]:
         slot: LegacyDetectionProjection(is_detected=False, detection_type=None)
         for slot in _DETECTION_SLOTS
     }
+    if any(item.limitation_id == "path_reference_encoding_unassessed" for item in row.limitations):
+        projected["path_traversal"] = LegacyDetectionProjection(
+            is_detected=False, detection_type=None, pattern_category="인코딩 관찰 평가 미완료")
     for detection in row.detections:
         evidence = detection.evidence
         if type(evidence) is BruteForceEvidenceProjection:
@@ -208,7 +212,11 @@ def project_legacy_analysis_response(raw: object, total_sources: int) -> Analysi
                 impact_level=risk.impact.level,
                 confidence_level=risk.confidence.level,
                 rationale_id="existing_assessment",
-                limitation=_RISK_LIMITATION,
+                limitation=_RISK_LIMITATION + (
+                    " " + PATH_UNASSESSED_NOTICE if any(
+                        item.limitation_id == "path_reference_encoding_unassessed" for item in row.limitations
+                    ) else ""
+                ),
             ),
         ))
     summary = AnalysisSummary(

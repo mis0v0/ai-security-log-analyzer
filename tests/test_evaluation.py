@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from app.evaluation.corpus import SCENARIOS, ExpectedDetection, utc
+from app.evaluation.corpus import SCENARIOS, DETECTION_TYPES, ExpectedDetection, utc
 from app.evaluation.runner import Confusion, EvaluationError, evaluate, ratio
 
 
@@ -46,12 +46,16 @@ def test_fixed_corpus_baseline_and_layers():
     assert [(m.detection_type, m.tp, m.fp, m.fn, m.tn, m.support) for m in result.detection_metrics] == [
         ("brute_force", 11, 0, 0, 58, 11),
         ("password_spraying_like", 2, 0, 0, 67, 2),
-        ("path_traversal", 2, 0, 0, 67, 2),
+        # P2: the malformed query is unassessed for traversal, not a TN.
+        ("path_traversal", 2, 0, 0, 66, 2),
         ("sql_injection_like", 5, 0, 0, 64, 5),
         ("xss_like", 5, 0, 0, 64, 5),
         ("sensitive_resource_probing_like", 4, 0, 0, 65, 4),
         ("web_scanning_like", 3, 0, 0, 66, 3),
     ]
+    assert {m.detection_type: m.excluded_unassessed for m in result.detection_metrics} == {
+        kind: int(kind == "path_traversal") for kind in DETECTION_TYPES
+    }
     assert [(m.relation_type, m.tp, m.fp, m.fn) for m in result.correlation_metrics] == [
         ("failed_to_successful_login", 6, 0, 0),
         ("brute_force_to_successful_login", 3, 0, 0),
@@ -112,7 +116,7 @@ def test_text_and_json_metrics_report_the_same_counts():
     for metric in summary["detection_metrics"]:
         line = next(line for line in lines if line.startswith(f"detection {metric['detection_type']}:"))
         for key, label in (("tp", "TP"), ("fp", "FP"), ("fn", "FN"),
-                           ("tn", "TN"), ("support", "support")):
+                           ("tn", "TN"), ("support", "support"), ("excluded_unassessed", "excluded_unassessed")):
             assert f"{label}={metric[key]}" in line
     for metric in summary["correlation_metrics"]:
         line = next(line for line in lines if line.startswith(f"correlation {metric['relation_type']}:"))
