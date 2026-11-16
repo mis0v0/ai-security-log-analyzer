@@ -56,13 +56,13 @@ _FIXTURE_PINS = (
 )
 
 _SOURCE_VERSION_PINS = (
-    (('app', 'analyzer'), 'html_report.py', '479d46aa2dddcacdccd0588fd0b6d219c2e81984b0ff17998f080fcbd6dce1f3'),
+    (('app', 'analyzer'), 'html_report.py', '303b70265bc17eb3213db44951c8ec6e6fcf866416f70b552bfaec0d48a0a5f1'),
     (('app', 'analyzer'), 'html_report_file.py', 'bce6e70651f158514781fd4c64ce6da5fde2746b498bbd2369d64378ed2087af'),
-    (('app', 'analyzer'), 'pipeline.py', 'ce96d8ebe4ece920b8105015bfb88fb03529758635c750d4415d6669d2923061'),
+    (('app', 'analyzer'), 'pipeline.py', '3dd08e9f84dd31c75bf174066a67fe2e3180830a8415777c8a73f685354322cd'),
     (('app', 'analyzer'), 'process_execution.py', 'eb48d173587a04be86fe4e8ce161bf624569decef482422759aafaa4c000732c'),
     (('app', 'analyzer'), 'process_execution_classification.py', '4b8112f796723e16d99d07ffd401697f42a2a73c872dee48b06425265b3b923f'),
-    (('app', 'analyzer'), 'report.py', '549fbcd5bcb2f85ecdc64cc3341de6d8744c6c57b5239e213c66a5cbefb4f086'),
-    (('app', 'analyzer'), 'report_projection.py', '6eccaee798efed9ea3536994bf4c8272681a8ed489b82d0be524172972dad445'),
+    (('app', 'analyzer'), 'report.py', '853826bf6b963746ac24354ec1c5dc20ccc5fbabd8f6d0ebe04f51710e970818'),
+    (('app', 'analyzer'), 'report_projection.py', '5847eb4b9259b217c85377793957574350a3223a525d1111fac1441cfc498793'),
     (('app', 'analyzer'), 'risk.py', '151a9129e7eecd4b867386a8ddfb314574ceeed9223010d91c3aa2126d222706'),
     (('app', 'analyzer'), 'web_observation_projection.py', '76b4e4a893891fee9411d72369c2f18705df3c43a3914943b5480d8f0328e433'),
     (('app', 'correlation'), 'attack_chain.py', '0535e800a5277202eb4f75fff0a4bcf33d2cf8d67642f851d0d10aaee1cf1d13'),
@@ -72,7 +72,7 @@ _SOURCE_VERSION_PINS = (
     (('app', 'detector'), 'brute_force.py', 'cfcbdf431a4cf37c90a04be6fddff31a450e27101c77b389c3235403ee83407f'),
     (('app', 'detector'), 'password_spray.py', 'a47e3626c05cd8c652f2e125dc92065dae9127ab0d51fc33cf044dda10cefd56'),
     (('app', 'detector'), 'shared_memory_execution.py', '41b9a36aa9b2242e2d35c74698d56a6e1c0e79c13f6877d439ad0867aa59f0f7'),
-    (('app', 'detector'), 'web_attack.py', '7c60008e756f0333feb160393b1c85e4b96468457533b9bf7c60e4a61d22ad59'),
+    (('app', 'detector'), 'web_attack.py', '9ffe10b0fef6197eae4fc15e523e49d1857165adf4e91682dc08f7ec85407b74'),
     (('app', 'evaluation'), '__init__.py', '4b7f8d82a1c6e5a69c454a2f0a242b02347545923b9fdc6bf674b270c2171466'),
     (('app', 'evaluation'), 'counterfactual_analyst_report.py', '5d3e1ce29aec1144e70cdc4f043190494085c0f12c199b277d881943f8e1a557'),
     (('app', 'evaluation'), 'counterfactual_comparison.py', 'abd5b52b72ab2d518cb53c9699ffd0adbcc2c804be5638edfd1761c76ffd9a91'),

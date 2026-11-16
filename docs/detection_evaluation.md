@@ -144,6 +144,8 @@ Phase 9.1 로컬 웹 화면은 같은 Phase 9 분류기와 별도 privacy-safe �
 
 ## DETECT-1 — Path Traversal 참조 범위의 측정된 한계
 
+이 절의 결과·현행이라는 표현은 **DETECT-1 당시 v1 정책**의 역사적 기록이다. DETECT-2 이후의 production v2 결과와 구분한다. 원 manifest·fixture·라벨·hash는 그대로 두며, 재현 테스트는 byte-identical한 test-only v1 detector를 명시적으로 주입한다. 새 정책의 정답 oracle로 사용하지 않는다.
+
 기준 main `88a5716b9332bd673ee0806429487bec3bca261c`, 동결 evidence commit `5f3c26aa809a6b38e8349009c45dec9539ea6650`, 최초 확인일 2026-11-15, P2 의미 감사일 2026-11-16. **Production 변경 없음, 원 판정 `DETECT_1_EVIDENCE_ONLY` 유지**.
 
 **측정 범위: `FROZEN_INTERNAL_LABEL_AGREEMENT_ONLY` — 동결 내부 라벨과의 일치도입니다. RFC 3986 문법 정확도가 아닙니다. 테스트 통과는 라벨의 의미적 타당성을 검증하지 않습니다.**
@@ -236,3 +238,64 @@ Production 보정을 하지 않았다. 현행 API adapter는 `path_pattern`을 �
 P2 판정은 `DETECT_1_P2_DOCUMENTED_LIMITATION`이다. PR은 **동결 자료·기존 동작의 특성 기록·방법론적 한계 공개** 범위로 통합할 수 있다. 단일한 참조 기준의 정확도 검증, 탐지 보정 완료, 라벨 정책 승인 또는 운영 GO로 소개할 수 없다. PR 설명의 Findings에도 지표가 혼합 의미의 동결 라벨표와의 일치도라는 점을 포함해야 한다.
 
 회귀는 고정 hash·현재 결과 재현·정규화 동등성·문서의 측정 범위와 제외 분모·개인정보 경계를 보호한다. 라벨의 의미적 정답성을 assert하지 않는다. 새 framework/CLI는 없으며 `uv run pytest -q tests/test_detect_1_path_reference.py`로 재현한다. 실제 운영 정확도, 승인 활동의 오탐률, 서버 취약 여부·파일 접근 성공·로그 진위는 계속 미검증이다. 추가로 필요한 근거는 proxy/backend의 target 재작성·정규화 설정, 라우트 처리와 파일 접근 기록, 승인 활동 맥락이다. Snapshot payload·source pin·개인정보 공개 계약·기존 46/79/21 및 S1 HOLD·운영 NO_GO는 바꾸지 않는다.
+
+## DETECT-2 — 관찰 종류를 구분한 Path Traversal v2
+
+### Research Basis와 관찰 명제
+
+- IETF [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986), 2005-01: §2.1의 `%HH`, §3.3의 완전한 dot-segment와 마지막 `..`, §3.4의 비계층 query, §5.2.4의 dot-segment 처리를 구분한다. §2.4는 같은 문자열의 반복 decoding을 URI 표준 처리로 사용하지 말라고 경고한다. 따라서 아래 제한된 반복 decoding은 **프로젝트의 의심 문자열 탐색 heuristic**이며 RFC 정규화·서버 동작 재현이 아니다.
+- [OWASP Path Traversal](https://owasp.org/www-community/attacks/Path_Traversal), 발행일 미표기: encoding·이중 encoding·운영체제별 separator 예시는 탐색 대상의 근거다. 이 설명이 임의 backend의 해석이나 모든 encoding 지원을 보장하지 않는다.
+- MITRE [CWE-22](https://cwe.mitre.org/data/definitions/22.html), CWE 5.0 / 2026-10-28 갱신: 제한 디렉터리 밖의 자원 접근은 backend가 경로를 처리하는 조건을 포함한다. Access 로그의 요청 문자열만으로 취약점·허용 디렉터리 이탈을 입증할 수 없다.
+
+| 명제 | 필요한 관찰 → 저장소 필드 → 조건 | 결론의 한계 |
+| --- | --- | --- |
+| A | 원문 target의 path → `NormalizedEvent.http.path` → `/`로 분리한 완전한 ASCII `..` 구성요소 | literal path 구문 관찰, 끝의 `..` 포함 |
+| B | 같은 path → 최대 3단계 strict percent-decoding → 완전한 `..` 구성요소 | RFC 규범이 아닌 프로젝트 heuristic |
+| C | target의 query → `http.query` → 제한된 decoding 뒤 `../` 또는 `..\\` 문자열 | query는 비계층 자료이며 검색·문서화에서도 나타남 |
+| D | proxy/backend 재작성·라우팅·파일 경로 처리 기록 | 현재 로그만으로 미확정 |
+| E | 승인 맥락·파일 접근/권한·실제 응답 내용 등 | 공격 목적·악용 성공·취약점은 미확정, HTTP 200도 증거가 아님 |
+
+### Production 계약과 소비자
+
+`path_traversal` 타입은 유지하되 A/B/C와 backend 의존 역슬래시 관찰의 **합집합**이다. path의 일반 이름 `filename..`·`file...` 내부는 일치하지 않는다. 마지막 부모 구성요소는 관찰된 그대로 `path_pattern=".."`이며 존재하지 않는 `/`를 붙이지 않는다. Unicode 유사 점은 ASCII로 접지 않는다. 역슬래시는 URI 표준 separator라고 주장하지 않는다.
+
+새 내부 Evidence `path_observation_kind`는 다음 네 고정 코드만 허용한다. 원문 path에서 먼저 찾고 없으면 decoding 결과, 그 뒤 query를 확인하므로 이벤트당 대표 관찰 하나다.
+
+| 고정 코드 | 의미 |
+| --- | --- |
+| `PATH_PARENT_SEGMENT` | 원문 path의 `/` 경계 완전한 부모 구성요소 |
+| `DECODED_PATH_PARENT_REFERENCE` | decoding 뒤 path의 부모 참조 형태 |
+| `BACKSLASH_PARENT_REFERENCE` | 부모 참조 경계에 역슬래시가 있는 backend 의존 형태 |
+| `QUERY_REFERENCE_STRING` | query의 부모 참조형 부분 문자열, backend path라고 해석하지 않음 |
+
+Query의 `file=../…`와 `q=../…`는 같은 C 관찰이다. 파라미터 이름으로 파일 처리·악의성을 추정하지 않는다. 따라서 정상 검색/문서화도 계속 관찰될 수 있다. 역슬래시·query는 경로 구성요소 A의 정확도에 합쳐 보고하지 않는다. 아래 표의 명제는 명시된 v2 관찰 합집합이며 RFC 정확도가 아니다.
+
+내부의 decoded path/query는 종전처럼 private다. Incident adapter는 고정 kind와 실제 pattern 조합을 검증한 뒤 redacted Evidence만 전달한다. V1 investigation API/UI는 기존 redacted 구조를 유지하고 고정 reason 문구에서 path 또는 질의 문자열이며 서버 해석·공격 의도 미확인임을 명시한다. Legacy API는 **기존** `pattern_category`에 한국어 고정 범주만 채운다. 보고서 projection의 `observation_kind`와 HTML/CLI 범주도 고정 allowlist다. 경로·query·원래 IP·원문·미선택 mapping 필드를 새 공개 출력에 넣지 않는다. Terminal `..`는 v2 범주가 있어야 승인되며, 알 수 없는 kind는 거부한다. 과거 v1의 `../`·`..\\` Evidence reader는 동결 재현 및 기존 입력 계약을 위해 유지한다.
+
+단일 IP의 기존 한 개 detection slot은 가장 이른 timestamp를 대표로 선택한다. 같은 시각은 고정 범주 순서, method/status/size, private path/query의 사전순으로 결정해 입력 순서에 의존하지 않는다. Private target은 동률 해소에만 쓰고 식별자·hash·공개 Evidence로 만들지 않는다. 위험 계산식·상관관계·threshold는 변경하지 않았다. 대표 관찰 또는 탐지 여부가 달라지면 기존 risk 계산에 들어가는 사실은 달라질 수 있다. 이 slot은 전체 traversal 이벤트 수나 관찰 종류별 건수를 뜻하지 않는다.
+
+### Decoding 범위와 미평가
+
+`decode_url()`은 각 component에 UTF-8 8,192 bytes, 최대 3 transform layer를 적용한다. 값은 표준 임계값이 아닌 고정 엔지니어링 자원 제한이다. 최대 3번의 선형 탐색이며 URL decoding이 입력 크기를 증폭시키지 않는다. 원래 `%HH`를 검사하고 UTF-8 strict decoding을 사용한다. `%25`에서 나온 literal percent는 보존하고 plus를 공백으로 바꾸지 않는다. control/format/surrogate, malformed escape, invalid UTF-8, 범위 초과는 `None`으로 **미평가** 처리한다. 잘못된 encoding을 replacement 문자로 손실 복구하지 않는다. 다른 웹 Detector의 `_bounded_decode()`는 변경하지 않았다.
+
+지원 범위 밖은 정상·안전·TN이 아니다. 기존 DetectionResult의 non-match는 이 규칙의 지원된 관찰이 없다는 뜻만 가진다. 별도 미평가 건수를 공개하거나 입력 인식 완료를 전체 규칙 평가 완료로 바꾸지 않는다. 원문에 분명한 참조와 잘못된 encoding이 섞인 경우도 이 strict profile 밖일 수 있다. 4단계 이상 encoding·Unicode/backend 변형은 회피/미관찰 가능성이 남는다. Parser가 먼저 거부한 입력도 detector 음성으로 세지 않는다.
+
+### 독립 합성 사례와 변경 전후
+
+`tests/test_path_traversal_semantics_detect_2.py`는 DETECT-1 라벨을 재활용하지 않는다. 개발 기대값을 Production 변경 전에 작성했고 처음 14개에서 11개 assertion이 RED였다. 후속 8개 검증의 mixed percent-data query가 decoder 결함을 드러내 수정에 사용됐다. 이를 수정에 사용하지 않은 검증이라고 부르지 않는다. 그 뒤 별도의 최종 8개를 고정하고 실행했다. 내부 작성 합성이며 독립 사람 검토·현실 ground truth가 아니다.
+
+표 순서는 TP / FP / FN / TN이며, encoding profile 밖은 제외한다. FP/FN은 선언된 문자열 명제와의 차이이고 운영 공격/정상 라벨이 아니다. Query·역슬래시 관찰의 악의성은 이 분모에 없다.
+
+| 집합 | 유효 분모 / 범위 밖 | v1 | v2 |
+| --- | --- | --- | --- |
+| 개발 14 | 12 / 2 | 6 / 2 / 1 / 3 | 7 / 0 / 0 / 5 |
+| 수정에 사용된 후속 8 | 7 / 1 | 3 / 1 / 1 / 2 | 4 / 0 / 0 / 3 |
+| 별도 최종 검증 8 | 6 / 2 | 3 / 2 / 1 / 0 | 4 / 0 / 0 / 2 |
+
+같은 명제·같은 유효 분모에서만 비교했다. DETECT-1의 11 scored 사례와 합산·성능 비교하지 않는다. 단일 사례별 관찰과 기존 `Confusion` 산술만 재사용하며 새 평가 엔진은 없다. CLF/Combined·고정 Nginx JSON·수동 mapping은 parser disposition과 공통 event 필드를 먼저 비교한 뒤 detection/Evidence·Correlation·Risk·API/HTML 개인정보 경계를 비교한다. 서로 다른 protocol/response-size/raw는 존재하지 않는 값으로 채우지 않는다. 실제 backend 악용이나 실제 Nginx 요청 수용을 실험한 것은 아니다.
+
+### 동결 증거와 Snapshot
+
+DETECT-1 전체 fixture bytes·manifest·labels·hashes는 불변이다. `FROZEN_INTERNAL_LABEL_AGREEMENT_ONLY`와 혼합 라벨 제외 규칙도 그대로다. `tests/detect1_path_policy_v1.py`의 세 함수 source tail은 기준 commit `b0a5dcb4b56101e1f20312527da1bbe3664ef196`과 동일하며 SHA-256 `8473bd6994e5e466b626909b385a023001062ec33661d7aed9f01d55def1a976`로 검사한다. `app/`은 이 replay helper를 import하지 않는다. 기존 모든 assertion·3/4/3/1 결과는 v1에 대해 보존하고 v2는 위 별도 명제로 검증한다. unbounded v1 decoder는 고정 비민감 historical fixture 재현 전용이다.
+
+Snapshot은 현재 탐지 성능 보고서가 아니라 기존 auth counterfactual 결과다. 37개 source pin 중 변경된 5개만 실제 소스 hash로 갱신하며 pin 수·payload schema·13,783 bytes·기존 asset SHA-256을 유지한다. 이전 pin 거부, 신규 pin 검증, 추가 필드·재봉인 변조 거부, 전달 기본 OFF를 계속 검사한다. S1 HOLD와 운영 NO_GO는 변경하지 않는다. 추가 backend telemetry·승인 맥락·real-world 평가 없이 서버 취약점·공격 성공·운영 탐지율을 주장할 수 없다.

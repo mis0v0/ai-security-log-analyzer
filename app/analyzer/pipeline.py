@@ -184,6 +184,7 @@ def detect_attacks_with_context(logs, run_owner: AnalysisRunOwner):
                 spray_result
             )
 
+    selected_path_keys = {}
     for log in logs:
 
         if log.src_ip is None:
@@ -205,7 +206,20 @@ def detect_attacks_with_context(logs, run_owner: AnalysisRunOwner):
         )
 
         if path_result.is_detected:
-
+            kind = next((e.value for e in path_result.evidence if e.type == "path_observation_kind"), None)
+            if kind is not None:
+                # One per-IP slot: earliest observation, then a fixed category
+                # and metadata order. Private targets only break exact ties;
+                # they are never identifiers, evidence exports or risk inputs.
+                rank = ("PATH_PARENT_SEGMENT", "DECODED_PATH_PARENT_REFERENCE",
+                        "BACKSLASH_PARENT_REFERENCE", "QUERY_REFERENCE_STRING").index(kind)
+                key = (log.timestamp, rank, log.http.method,
+                       log.http.status_code if log.http.status_code is not None else -1,
+                       log.http.response_size if log.http.response_size is not None else -1,
+                       log.http.path, log.http.query or "")
+                if log.src_ip in selected_path_keys and key >= selected_path_keys[log.src_ip]:
+                    continue
+                selected_path_keys[log.src_ip] = key
             result = results[log.src_ip]
 
             result["detections"]["path_traversal"] = (

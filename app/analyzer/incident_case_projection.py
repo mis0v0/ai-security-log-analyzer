@@ -986,7 +986,7 @@ def _independent_reason(item: IndependentObservation) -> str:
         _fail()
     observation_type = item.observation.observation_type
     if observation_type == "path_traversal":
-        return "Path Traversal은 V1 인증 사례와 자동 결합하지 않습니다."
+        return "Path Traversal은 V1 인증 사례와 자동 결합하지 않습니다. 경로 또는 질의 문자열의 부모 참조형 관찰입니다. 실제 서버 해석·공격 의도는 미확인입니다."
     if observation_type in WEB_TYPES:
         return "웹 요청 관찰은 인증 사례나 다른 웹 관찰과 자동 결합하지 않습니다."
     if observation_type in {

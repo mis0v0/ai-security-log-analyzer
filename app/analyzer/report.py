@@ -8,6 +8,7 @@ from app.detector.shared_memory_execution import (
     SharedMemoryExecutionReviewSummary,
 )
 from app.models.schemas import Evidence
+from app.detector.web_attack import valid_path_evidence
 from app.analyzer.report_projection import (
     InvestigationReportProjectionError,
     _validate_rationale,
@@ -143,6 +144,7 @@ def _path_traversal_evidence_lines(detection):
         ("http_method", "HTTP method", str, False, ""),
         ("http_status_code", "Response status", int, False, ""),
         ("http_response_size", "Response size", int, False, " bytes"),
+        ("path_observation_kind", "Observation kind", str, False, ""),
     )
 
     if type(detection.evidence) is not list:
@@ -186,7 +188,7 @@ def _path_traversal_evidence_lines(detection):
     if actual_index != len(detection.evidence):
         return None
     values_by_label = dict(lines)
-    if values_by_label.get("Matched pattern") not in {"../", "..\\"}:
+    if not valid_path_evidence(values_by_label.get("Matched pattern"), values_by_label.get("Observation kind")):
         return None
     method = values_by_label.get("HTTP method")
     if method is not None and re.fullmatch(r"[A-Z]{1,16}", method) is None:

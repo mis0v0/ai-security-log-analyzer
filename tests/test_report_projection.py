@@ -248,6 +248,7 @@ def test_projection_dataclasses_are_frozen_and_have_exact_field_allowlists():
             "http_method",
             "response_status",
             "response_size_bytes",
+            "observation_kind",
         ),
         DetectionDisplayItem: ("detection_type", "display_name", "evidence"),
         CorrelationDisplayItem: (
@@ -582,7 +583,9 @@ def test_fixed_limitation_and_next_step_allowlists_use_approved_korean_text():
         ),
         "path_traversal_not_file_disclosure": (
             "HTTP 응답과 경로 탐색 패턴만으로 파일 접근 또는 데이터 "
-            "노출이 이루어졌다고 판단할 수 없습니다."
+            "노출이 이루어졌다고 판단할 수 없습니다. "
+            "경로 또는 질의 문자열의 관찰이며 디코딩·역슬래시는 프로젝트 heuristic입니다. "
+            "실제 backend 해석이나 공격 의도는 확인되지 않았습니다."
         ),
         "correlation_not_causation": (
             "상관관계는 인과관계나 침해의 증거를 의미하지 않습니다."

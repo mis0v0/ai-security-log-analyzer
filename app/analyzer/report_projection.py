@@ -10,6 +10,7 @@ from app.detector.shared_memory_execution import (
     SharedMemoryExecutionReviewSummary,
 )
 from app.models.schemas import DetectionResult, Evidence
+from app.detector.web_attack import PATH_OBSERVATION_LABELS, valid_path_evidence
 from app.detector.brute_force import is_owned_analysis_result
 from app.analyzer.web_observation_projection import (
     WEB_TYPES, WEB_DISPLAY, WEB_LIMITATION, WEB_NEXT_STEP,
@@ -126,7 +127,9 @@ _LIMITATION_CATALOG = (
         "path_traversal_not_file_disclosure",
         (
             "HTTP 응답과 경로 탐색 패턴만으로 파일 접근 또는 데이터 "
-            "노출이 이루어졌다고 판단할 수 없습니다."
+            "노출이 이루어졌다고 판단할 수 없습니다. "
+            "경로 또는 질의 문자열의 관찰이며 디코딩·역슬래시는 프로젝트 heuristic입니다. "
+            "실제 backend 해석이나 공격 의도는 확인되지 않았습니다."
         ),
         frozenset({"path_traversal"}),
     ),
@@ -228,6 +231,7 @@ class PathTraversalEvidenceProjection:
     http_method: str | None
     response_status: int | None
     response_size_bytes: int | None
+    observation_kind: str | None = None
 
 
 SupportedEvidenceProjection = (
@@ -464,6 +468,7 @@ def _path_traversal_evidence(detection):
         "http_method",
         "http_status_code",
         "http_response_size",
+        "path_observation_kind",
     )
     if type(detection.evidence) is not list:
         _fail()
@@ -491,13 +496,15 @@ def _path_traversal_evidence(detection):
         "path_pattern",
         "url_decoded_query",
         "http_method",
+        "path_observation_kind",
     ):
         if evidence_type in by_type and type(by_type[evidence_type].value) is not str:
             _fail()
     for evidence_type in ("http_status_code", "http_response_size"):
         if evidence_type in by_type:
             _strict_non_negative_int(by_type[evidence_type].value)
-    if by_type["path_pattern"].value not in {"../", "..\\"}:
+    kind = by_type["path_observation_kind"].value if "path_observation_kind" in by_type else None
+    if not valid_path_evidence(by_type["path_pattern"].value, kind):
         _fail()
     if "http_method" in by_type and re.fullmatch(
         r"[A-Z]{1,16}", by_type["http_method"].value,
@@ -505,6 +512,7 @@ def _path_traversal_evidence(detection):
         _fail()
 
     return PathTraversalEvidenceProjection(
+        observation_kind=PATH_OBSERVATION_LABELS[kind] if kind is not None else None,
         matched_pattern=by_type["path_pattern"].value,
         http_method=(
             by_type["http_method"].value

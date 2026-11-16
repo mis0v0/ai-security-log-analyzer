@@ -131,6 +131,7 @@ def _detections(row) -> dict[str, LegacyDetectionProjection]:
             slot = "path_traversal"
             values = dict(
                 matched_pattern=evidence.matched_pattern,
+                pattern_category=evidence.observation_kind,
                 http_method=evidence.http_method,
                 response_status=evidence.response_status,
                 response_size_bytes=evidence.response_size_bytes,

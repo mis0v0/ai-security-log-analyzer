@@ -28,6 +28,8 @@ Schema 2 단일-source status/SSE, schema 3 multi-source status/SSE, Phase 33.4 
 
 기존 대상별 HTML 보고서의 Path Traversal 근거는 승인 pattern, method, status, response size를 보존하지만 모든 원래 HTTP path와 full query를 제거한다. “요청 경로”는 고정 개인정보 보호 안내로 표시한다. 기존 report-local 계정 별칭, 6열 표, standalone HTML, no JavaScript/remote resource와 검증된 CSP style hash는 유지한다. CLI는 원문 계정·path/query·무검증 rationale를 출력하지 않는다. LLM prompt는 raw internal result가 아닌 explicit safe projection만 받는다. 평가 runner와 versioned API는 기존의 공개 allowlist 경계를 유지한다.
 
+DETECT-2는 부모 구성요소·decoding·역슬래시·질의 문자열을 구분하는 **고정 관찰 범주**만 추가한다. Report projection의 `observation_kind`와 legacy API의 기존 `pattern_category`는 원문이 아닌 allowlist 한국어 label이다. Terminal `..`는 v2 관찰 kind가 검증된 경우에만 승인한다. HTML/CLI도 실제 token과 고정 범주만 표시하며 backend 해석·의도·성공을 확정하지 않는다. V1 investigation API는 기존 redacted Evidence 구조를 유지한다. 관찰 범주가 추가됐다는 사실과 원문 개인정보 비공개는 구분한다. [v2 계약과 한계](detection_evaluation.md#detect-2--관찰-종류를-구분한-path-traversal-v2)를 참고한다.
+
 ## 남은 한계
 
 Phase 8의 네 새 웹 관찰은 trusted parser event의 원래 path/query를 canonical target 계산에 일시적으로 사용하지만, 공개 경계에는 고정 pattern ID의 한국어 category·횟수·시간·위험도·한계만 복사한다. Deprecated legacy API도 새 type별 explicit safe model을 사용하며 raw evidence를 통과시키지 않는다. 기존 Path Traversal의 원래 path/query 제거 정책과 동일하다. [웹 요청 관찰 설계](web_attack_observation_design.md)에 패턴과 오탐·미탐 한계를 기록했다.

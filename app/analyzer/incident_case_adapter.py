@@ -18,6 +18,7 @@ from app.analyzer.incident_case_projection import (
     build_investigation_case_projection,
 )
 from app.models.schemas import DetectionResult, Evidence
+from app.detector.web_attack import valid_path_evidence
 from app.detector.brute_force import (
     AnalysisRunOwner,
     BruteWindowContext,
@@ -387,10 +388,11 @@ def _authentication_detection(
 
 
 def _path_detection(detection: DetectionResult) -> DetectionResult:
-    if type(detection.evidence) is not list or not 2 <= len(detection.evidence) <= 6:
+    if type(detection.evidence) is not list or not 2 <= len(detection.evidence) <= 7:
         _fail("invalid_detection_contract")
     seen = set()
     pattern = None
+    kind = None
     timestamps = []
     timestamps_valid = True
     for raw_item in detection.evidence:
@@ -402,6 +404,7 @@ def _path_detection(detection: DetectionResult) -> DetectionResult:
             "http_method",
             "http_status_code",
             "http_response_size",
+            "path_observation_kind",
         }:
             _fail("invalid_detection_contract")
         seen.add(item.type)
@@ -420,16 +423,19 @@ def _path_detection(detection: DetectionResult) -> DetectionResult:
             "path_pattern",
             "url_decoded_query",
             "http_method",
+            "path_observation_kind",
         }:
             if type(item.value) is not str:
                 _fail("invalid_detection_contract")
             if item.type == "path_pattern":
-                if item.value not in {"../", "..\\"}:
-                    _fail("invalid_detection_contract")
                 pattern = item
+            elif item.type == "path_observation_kind":
+                kind = item.value
         else:
             _non_negative_int(item.value, "invalid_detection_contract")
     if not {"url_decoded_path", "path_pattern"}.issubset(seen):
+        _fail("invalid_detection_contract")
+    if pattern is None or not valid_path_evidence(pattern.value, kind):
         _fail("invalid_detection_contract")
 
     approved_evidence = []

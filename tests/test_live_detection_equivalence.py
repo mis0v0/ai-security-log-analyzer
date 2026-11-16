@@ -115,13 +115,27 @@ def test_scan_repeated_target_and_exact_60_second_boundary():
     assert dict(summaries[-1].detected_type_counts)["web_scanning_like"] == 1
 
 
-def test_batch_order_dependence_is_characterized_not_changed():
+def test_batch_order_dependence_is_characterized_not_changed(monkeypatch):
+    # Preserve Phase 16's historical v1 characterization. DETECT-2 v2 is
+    # separately checked below, not substituted into the old observation.
+    from detect1_path_policy_v1 import detect_path_traversal
+    monkeypatch.setattr("app.analyzer.pipeline.detect_path_traversal", detect_path_traversal)
     first = web(1, "/one?file=../a")
     second = web(2, "/two?file=../b")
     forward, _ = run_prefix_parity("access", (first, second))
     reverse, _ = run_prefix_parity("access", (second, first))
     # The legacy path-traversal slot is overwritten by the last matching input.
     assert forward._detection != reverse._detection
+
+
+def test_v2_batch_and_live_replay_choose_same_earliest_path_observation():
+    first = web(1, "/one?file=../a")
+    second = web(2, "/two/..")
+    forward, _ = run_prefix_parity("access", (first, second))
+    reverse, _ = run_prefix_parity("access", (second, first))
+    assert forward._detection == reverse._detection
+    evidence = forward._detection["192.0.2.1"]["detections"]["path_traversal"].evidence
+    assert next(e.value for e in evidence if e.type == "path_observation_kind") == "QUERY_REFERENCE_STRING"
 
 
 @pytest.mark.parametrize(("role", "fixture"), (

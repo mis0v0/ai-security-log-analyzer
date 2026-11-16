@@ -21,6 +21,14 @@ from app.json_access_mapping import (
     MappingInputError, analyze_mapped_access_file, normalize_mapped_access,
 )
 from app.main import analyze
+from detect1_path_policy_v1 import detect_path_traversal as historical_v1, analyze_mapped_v1
+
+
+@pytest.fixture(autouse=True)
+def replay_frozen_v1_policy(monkeypatch):
+    """Historical DETECT-1 results use v1; DETECT-2 tests exercise production v2."""
+    monkeypatch.setattr("app.analyzer.pipeline.detect_path_traversal", historical_v1)
+    monkeypatch.setattr("app.json_access_mapping.analyze_mapped_access_file", analyze_mapped_v1)
 
 
 ROOT = Path(__file__).resolve().parents[1] / "sample_logs" / "detect_1_path_reference"

@@ -2,6 +2,7 @@ import base64
 import hashlib
 from html import escape
 import math
+from app.detector.web_attack import PATH_OBSERVATION_LABELS, valid_path_evidence
 
 from app.analyzer.report_projection import (
     AssessmentDimensionProjection,
@@ -257,6 +258,14 @@ def _evidence_lines(evidence, *, local_upload=False):
             ),
         )
     if type(evidence) is PathTraversalEvidenceProjection:
+        kind = None
+        if evidence.observation_kind is not None:
+            kind = next((code for code, label in PATH_OBSERVATION_LABELS.items()
+                         if label == evidence.observation_kind), None)
+            if kind is None:
+                _fail()
+        if not valid_path_evidence(evidence.matched_pattern, kind):
+            _fail()
         lines = [
             (
                 "요청 경로",
@@ -264,6 +273,8 @@ def _evidence_lines(evidence, *, local_upload=False):
             ),
             ("일치 패턴", f"<code>{_text(evidence.matched_pattern)}</code>"),
         ]
+        if evidence.observation_kind is not None:
+            lines.append(("관찰 범주", _text(evidence.observation_kind)))
         if evidence.http_method is not None:
             lines.append(("HTTP 메서드", _text(evidence.http_method)))
         if evidence.response_status is not None:
