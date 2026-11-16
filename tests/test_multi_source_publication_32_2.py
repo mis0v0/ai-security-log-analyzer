@@ -52,14 +52,29 @@ def test_pair_status_is_closed_and_keeps_role_revisions_separate(tmp_path: Path)
         runtime.close()
 
 
-def test_pair_events_share_global_ids_and_keep_role_order(tmp_path: Path):
+@pytest.mark.parametrize("elapsed", (0.0, 0.101), ids=("within-budget", "budget-exhausted"))
+def test_pair_events_share_global_ids_and_keep_role_order(tmp_path: Path, monkeypatch, elapsed):
     application, ssh, runtime, publication, _ = _pair(tmp_path)
     try:
         with application.open("a", encoding="utf-8") as stream:
             stream.write(APP * 5)
         with ssh.open("a", encoding="utf-8") as stream:
             stream.write(SSH * 5)
-        runtime.cycle()
+        # Control admission time, not worker execution: a cycle may legitimately
+        # stop after one role. The next cycle rotates to the other role first.
+        clock = iter((0.0, elapsed))
+        with monkeypatch.context() as timing:
+            timing.setattr("app.live_monitoring.multi_source.monotonic", lambda: next(clock))
+            first_cycle = runtime.cycle()
+        if elapsed >= 0.1:
+            assert first_cycle == (("application", "PROCESSED"),)
+            assert {event.source_role for event in publication.replay_after(None).events} == {"application"}
+            with monkeypatch.context() as timing:
+                timing.setattr("app.live_monitoring.multi_source.monotonic", lambda: 0.0)
+                next_cycle = runtime.cycle()
+            assert next_cycle[0] == ("ssh", "PROCESSED")
+        else:
+            assert first_cycle == (("application", "PROCESSED"), ("ssh", "PROCESSED"))
         replay = publication.replay_after(None)
         assert replay.status == "INITIAL"
         assert [event.source_role for event in replay.events] == ["application", "ssh"] or [

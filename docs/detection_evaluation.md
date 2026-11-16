@@ -386,7 +386,7 @@ A=Application, S=기존 ISO SSH, J=journal short-iso. 공통 관찰 필드만 �
 
 개발 RED는 1 failed / 10 passed(8개 최종 사례 제외)였다. 실패는 d10의 IPv6 표기 분절이다. 추가 실제 worker API RED 3개(A/S/J)도 실패했다. Parser는 모두 4개 실패를 수용했지만 raw 주소 문자열별로 2개 cohort가 만들어져 각 2실패·2target·16초 및 LOW였고 Spray는 false였다. 이는 count와 time evidence 자체가 섞인 결함이 아니라, 동일 주소가 같은 F에 들어오지 못한 공유 정규화 결함이다.
 
-`normalize_source_ip()`를 기존 parser normalization utility에 추가하고 등록된 Batch·Live 및 승인형 mapping의 정규화 경계에서 호출한다. 같은 숫자 주소의 표기만 canonical string으로 바꾼다. DNS·forwarded header·account/actor 추정은 없다. absent/invalid 값의 admission을 확장하거나 scoped 주소를 재해석하지 않는다. 서로 다른 주소·주소 family는 유지한다. 원문 record는 그대로 보존하고 공개하지 않는다. Linux Audit의 별도 typed parsing 경로는 변경하지 않는다.
+`normalize_source_ip()`를 기존 parser normalization utility에 추가하고 등록된 Batch·Live 및 승인형 mapping의 정규화 경계에서 호출한다. 같은 숫자 주소의 표기만 canonical string으로 바꾼다. DNS·forwarded header·account/actor 추정은 없다. absent/invalid 값의 admission을 확장하거나 scoped 주소를 재해석하지 않는다. 서로 다른 주소·주소 family는 유지한다. 원문 record는 그대로 보존하고 공개하지 않는다. 최초 DETECT-3 변경은 Linux Audit의 별도 typed parsing 경로를 변경하지 않았다. 이 누락으로 발생한 혼합 입력 회귀는 아래 P2에서 보정한다.
 
 수정 후 같은 입력이 1개 F, 4실패·3target·24초의 Spray 양성과 기존 계산에 따른 MEDIUM으로 분석된다. 세 로컬 API 요청은 기존 schema로 성공한다. 실패·계정·시간 threshold, whole-span 정책, Detector·Correlation·Risk 수식, API DTO, 공개 Evidence 필드에는 변경이 없다. 같은 주소의 분절이 해소되므로 파생 위험도·관계 입력은 달라질 수 있다.
 
@@ -403,3 +403,13 @@ A=Application, S=기존 ISO SSH, J=journal short-iso. 공통 관찰 필드만 �
 입력 순서 permutation, offset가 다른 동일 UTC 시각, 60초 경계, raw record 불변, Batch/Live 공통 관찰과 mapping/access 주소 동등성, API/HTML/CLI Evidence의 private 값 비노출을 검사한다. CLI의 기존 validated-IP subject header 계약은 유지한다. NAT/승인 자동화는 여전히 같은 pattern을 낼 수 있고 계정 identity·중복 전달/실제 시도 수·동일 credential·수집 완전성은 관측되지 않는다. 전체 span 밖 noise, 저속·분산 시도, scoped 주소 및 IPv4/mapped-IPv6 통합은 이번 보정 범위 밖이다.
 
 DETECT-1 동결 자료·v1 replay·DETECT-2 미평가 의미를 유지한다. Snapshot은 13,783 bytes를 재생성하지 않고, 37개 source pin 중 실제 변경된 pipeline/time utility 2개만 갱신한다. 운영 NO_GO·S1 HOLD·Spray Window 후보의 기존 승인 경계를 바꾸지 않는다.
+
+### DETECT-3 P2 — 혼합 Linux Audit Batch 회귀 보정
+
+최초 변경의 등록 Parser 분기에만 있던 정규화가 Linux Audit 분기의 조기 `continue`를 지나지 못했다. 같은 숫자 IPv6 주소를 일반 인증 로그와 `USER_AUTH`가 다른 문자열로 제공하면 결과 subject가 둘로 나뉘었고, 보고서의 숫자 주소 중복 거부가 HTML 생성과 CLI를 실패시켰다. 이 보호 검사는 유지한다.
+
+이제 모든 지원 Batch source가 합류한 `load_normalized_logs()`의 공통 수용 단계에서 기존 UTC·IP 정규화를 수행한다. 별도 Audit parser의 admission이나 원본 기록은 바꾸지 않는다. `USER_AUTH` 실패는 `authentication_attempt`/`failure`이며 일반 `login_failed`로 승격하지 않는다. 합성 혼합 사례는 일반 실패 4개와 Audit 기록 1개를 모두 보존하면서 subject 하나, 일반 실패 4개·target 문자열 3개·span 21초가 된다. 4/3/60 정책과 Correlation·Risk 수식은 그대로다.
+
+`tests/test_mixed_linux_audit_ip_detect_3_p2.py`는 Audit 단독·혼합, HTML·CLI, 순서, 멱등성, 주소 family·scope 분리 및 Process/Session/raw metadata 보존을 확인한다. Audit source/session identity는 IP로 대체하지 않는다. 이번 source pin 변경은 pipeline 하나뿐이며 Snapshot payload는 재생성하지 않는다.
+
+Live publication 테스트는 100ms soft cycle budget 소진 시 남은 역할이 다음 cycle에서 처리되는 계약을 검증하도록 보정한다. Runtime 예산은 변경하지 않는다. 이는 재현한 실패 경로이며 과거 실패의 실제 경과 시간을 측정했다는 뜻은 아니다. 브라우저 `CHECKLIST_ANALYSIS_MUTATION`의 과거 간헐 실패 원인은 별도로 미확정(`UNRESOLVED_INTERMITTENT`)이다. 합성 회귀 통과는 실환경 공격 탐지율이나 운영 승인 근거가 아니며 운영 NO_GO·S1 HOLD를 유지한다.

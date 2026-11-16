@@ -68,12 +68,13 @@ def load_normalized_logs(log_sources):
             parsed = parser(line, timezone)
 
             if parsed is not None:
-                parsed.timestamp = normalize_to_utc(
-                    parsed.timestamp
-                )
-                parsed.src_ip = normalize_source_ip(parsed.src_ip)
-
                 logs.append(parsed)
+
+    # Every supported batch source, including typed Audit records, reaches the
+    # same normalization boundary before any IP grouping or consumer runs.
+    for event in logs:
+        event.timestamp = normalize_to_utc(event.timestamp)
+        event.src_ip = normalize_source_ip(event.src_ip)
 
     return logs
 

@@ -58,7 +58,7 @@ _FIXTURE_PINS = (
 _SOURCE_VERSION_PINS = (
     (('app', 'analyzer'), 'html_report.py', '7b441955def41d24ea54c32cb74c2e69d4bf3b63d3e96e79d5ed2f87463491e8'),
     (('app', 'analyzer'), 'html_report_file.py', 'bce6e70651f158514781fd4c64ce6da5fde2746b498bbd2369d64378ed2087af'),
-    (('app', 'analyzer'), 'pipeline.py', '2520210ad7b2fc9e010af3f0a0946fedb96f9447ab7ee558d2dbfd8a85904919'),
+    (('app', 'analyzer'), 'pipeline.py', '47baecb0f2adcbde63e84765b58d855d9f53285fb6b2014f5ac66ba6c5ad216f'),
     (('app', 'analyzer'), 'process_execution.py', 'eb48d173587a04be86fe4e8ce161bf624569decef482422759aafaa4c000732c'),
     (('app', 'analyzer'), 'process_execution_classification.py', '4b8112f796723e16d99d07ffd401697f42a2a73c872dee48b06425265b3b923f'),
     (('app', 'analyzer'), 'report.py', '96dacf3ef26c5de6d82c2a1b548f922210494dfc56002c078feb0ccd02c0676a'),
