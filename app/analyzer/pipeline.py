@@ -35,7 +35,7 @@ from app.analyzer.risk import (
     evaluate_risk_level,
 )
 from app.models.schemas import DetectionResult
-from app.parser.time_utils import normalize_to_utc
+from app.parser.time_utils import normalize_to_utc, normalize_source_ip
 from app.parser.linux_audit import parse_linux_audit_events
 
 
@@ -71,6 +71,7 @@ def load_normalized_logs(log_sources):
                 parsed.timestamp = normalize_to_utc(
                     parsed.timestamp
                 )
+                parsed.src_ip = normalize_source_ip(parsed.src_ip)
 
                 logs.append(parsed)
 
