@@ -326,3 +326,80 @@ CLF와 고정 Nginx JSON Parser는 `/a/../%FF`, `/a/../%GG`, `/a/%2525252e%25252
 평가의 fixture·라벨은 변경하지 않는다. 기존 79개 중 `web_sql_malformed_percent`는 SQL lexical 음성을 그대로 평가하되 Path Traversal의 encoded-query 음성을 입증하지 못한다. 따라서 해당 규칙 TN을 **67→66**, 신규 `excluded_unassessed=1`로 명시한다. TP=2/FP=0/FN=0과 다른 규칙의 분모는 유지한다. 평가 CLI의 기존 metric에 이 제외 수를 추가하며 text/JSON 둘 다 표시한다. 이는 점수 향상이나 라벨 변경이 아니라 미평가를 TN에서 제거한 것이다. 46개 detector-accuracy evaluator는 unassessed non-match를 만나면 기존 bounded `analysis_failed`로 중단하여 TN으로 세지 않는다. 기존 46개에는 이 제외 입력이 없어 결과가 유지된다.
 
 DETECT-1의 동결 bytes·manifest·라벨·v1 replay는 불변이다. Snapshot 13,783 bytes도 재생성하지 않는다. P2에서 수정된 기존 pinned 소스 6개의 정확한 hash만 갱신하고 pin 수 37개를 유지한다. 미평가 안내는 공격 판단도 안전 판단도 아니며 운영 NO_GO와 S1 HOLD를 변경하지 않는다.
+
+## DETECT-3 — Password Spraying-like 집합 일관성과 주소 표기
+
+### 명제·Research Basis
+
+A–C는 **같은 관측 IP의 전체 실패 기록** 4개 이상, non-empty 계정 문자열 3개 이상, 전체 실패 min/max span 60초 이하(inclusive)다. 임의의 60초 부분 창 존재와는 다르다. D 승인 업무/자동화 여부, E 비밀번호 재사용·공격 의도·침해 성공은 현재 telemetry로 확정하지 않는다. 4/3/60은 기존 프로젝트 heuristic이며 외부 표준 임계값이 아니다.
+
+- [MITRE ATT&CK T1110.003](https://attack.mitre.org/techniques/T1110/003/), v1.8 / 2026-11-04: 여러 계정에 적은 수의 비밀번호를 시도하는 행위와 throttling을 설명한다. 저장소의 `event_type/user/src_ip/timestamp`는 실패·관측 target 문자열·시간 분포만 제공한다. 동일 비밀번호는 관찰하지 못하므로 이름을 `password_spraying_like`로 유지한다.
+- [RFC 5952](https://www.rfc-editor.org/rfc/rfc5952.html), 2010-08, RFC 4291 §2.2를 인용: 합법적인 IPv6 텍스트가 달라도 같은 주소를 나타낼 수 있다. 이를 `NormalizedEvent.src_ip`의 동일 **숫자 주소** 집합 형성에 적용했다. 계정·행위자 identity나 NAT client를 합치는 근거가 아니다. `ipaddress` 표현을 사용하되 IPv4-mapped IPv6를 IPv4로 합치거나 scoped 주소의 zone을 추정하지 않는다. 모든 RFC 5952 표기 권고 구현이나 내부 저장 형식을 RFC가 강제한다고 주장하지 않는다.
+- [Microsoft Password spray investigation](https://learn.microsoft.com/en-us/security/zero-trust/security-operations-playbook-password-spray), 2026-11-04 및 [sign-in activity details](https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-in-log-activity-details), 2026-03-04: sign-in·후속 활동·인증 맥락을 함께 조사해야 하며 IP/위치와 사용자 귀속은 결정적이지 않다. NAT·승인 자동화의 같은 패턴을 공격 의도로 분류하지 않는 한계에 반영한다. Entra telemetry를 이 프로젝트가 수집한다고 주장하지 않는다.
+
+### 실제 필드 생성·소비 경로
+
+`load_normalized_logs()` → `summarize_ip_failures()` → `detect_password_spray(features, failures)`를 추적했다. `group_failures_by_ip()`와 Pipeline의 `failures`는 모두 `event_type == "login_failed"`를 사용한다. 주체 p의 전체 실패 집합 F에 대해 다음이 성립한다.
+
+| 필드/근거 | 실제 정의 |
+| --- | --- |
+| `failure_count` | len(F), 계정 누락·동일하게 보이는 중복 기록도 포함 |
+| `target_users`, `unique_target_count` | F의 non-empty 사용자 문자열을 exact-string set으로 투영한 값과 그 크기 |
+| `window_seconds` | F의 max(UTC timestamp) − min(UTC timestamp) |
+| `within_window` | F가 비어 있지 않고 위 span ≤ 60초 |
+| Spray Evidence 3개 | 같은 F의 실패 수·관측 target 수·span 및 min/max time range |
+
+네 feature는 같은 집합에서 나오며 Brute Force의 per-account 선택 창과 혼합되지 않는다. Brute 선택 context는 별도 DetectionResult를 만들며 whole-IP feature를 덮어쓰지 않는다. `login_succeeded`는 별도 성공 이벤트 관찰이다. 성공 이벤트는 F의 count/span에 들어가지 않는다. user가 비었으면 target을 만들지 않는다. SSH의 `invalid user`는 관측 target 문자열이며 실제 존재하는 계정임을 보장하지 않는다.
+
+직접 Detector 호출은 Pipeline이 같은 F로 만든 feature와 failures를 제공하는 내부 계약을 전제로 한다. 임의로 모순된 scalar feature를 외부에서 주입하는 API는 없다. Risk는 whole feature와 탐지/관계 flag를 소비하며 계산식은 그대로다. Spray→success는 기존 closest failure/success pair를 사용하고 전체 Spray span 종료에 anchor하지 않는다. 성공이 일부 후속 실패보다 앞설 수 있으므로 이 관계를 '모든 Spray 조건 성립 후 성공'이나 인과관계로 읽으면 안 된다. 이 기존 consumer 한계와 V1 Spray case HOLD를 변경하지 않았다.
+
+### 동결 독립 합성 사례
+
+`tests/test_password_spray_detect_3.py`에 개발 10개·최종 8개를 먼저 정의했다. 라벨과 실제 렌더링 입력별 SHA-256을 포함한 bundle은 실행 전 `dd8bb93d397477be2fe88b3dfefe9bd468de279c5ec74d095dd8da9a39b23263`으로 동결했다. 기존 46/79/36/33 및 counterfactual/holdout fixture를 복사하거나 라벨을 변경하지 않았다. 내부 작성 합성이며 독립 사람 검토·실환경 ground truth는 아니다.
+
+A=Application, S=기존 ISO SSH, J=journal short-iso. 공통 관찰 필드만 형식 간 비교한다. Source/method/service/provenance가 다른데 전체 이벤트가 같다고 주장하지 않는다.
+
+| 고정 ID | 입력 형식 | A–C 라벨과 독립 근거 | 운영 맥락 |
+| --- | --- | --- | --- |
+| d01_four_three | A/S/J | 양성: 4실패·3문자열·21초 | 미확정 |
+| d02_outside | A/S/J | 음성: 전체 span 61초 | 미확정 |
+| d03_separate_windows | A/S/J | 음성: 계정 관찰이 전체 120초에 분산 | 미확정 |
+| d04_one_account | A/S/J | 음성: 실패 6건이나 target 1개 | 미확정 |
+| d05_two_accounts | A/S/J | 음성: 실패 8건이나 target 2개 | 미확정 |
+| d06_same_time | A/S/J | 양성: 4실패·3문자열, 0초도 허용 | 미확정 |
+| d07_inclusive_60 | A/S/J | 양성: 정확히 60초 | 미확정 |
+| d08_missing_fourth | A | 양성: 실패 4건 중 알려진 문자열 3개, 누락 identity 추정 없음 | 미확정 |
+| d09_two_known | A | 음성: 누락/빈 값은 세 번째 target이 아님 | 미확정 |
+| d10_ipv6_spelling | A/S/J | 양성: 동일 숫자 IPv6 주소, 4실패·3문자열·24초 | 미확정 |
+| v01_microsecond_outside | RFC 5424 SSH | 음성: 60초 + 1 microsecond | 미확정 |
+| v02_reversed | A/S/J | 양성: 입력 역순이어도 동일 관찰 | 미확정 |
+| v03_nat_clients | A/S/J | 양성: 같은 egress에서 4/3/9 | 합성 정상 NAT; 단일 행위자는 아님 |
+| v04_approved_automation | A/S/J | 양성: v03과 같은 관찰, 승인 정보는 로그 밖 | 합성 승인 업무; pattern FP 아님 |
+| v05_invalid_user_labels | S | 양성: invalid-user 표식에도 target 문자열은 관찰됨 | 계정 존재 미검증 |
+| v06_outlier_whole_span | A | 음성: 15초 burst 뒤 계정 없는 실패가 전체 span을 120초로 만듦 | 현행 범위의 한계 |
+| v07_ipv6_three_spellings | A/S/J | 양성: 세 표기가 같은 숫자 주소, 4/3/18 | 미확정 |
+| v08_success_interleaving | A/S/J | 양성: 성공을 제외한 4실패·3문자열·30초 | 성공은 침해 증거 아님 |
+
+별도 malformed SSH는 parser 거부를 확인하고 위 confusion matrix의 TN으로 세지 않는다. 부분 창을 찾는 다른 명제에서 v06을 FN으로 부를 수 있지만 이 표의 whole-span 음성과 같은 분모로 합치지 않는다. 기존 36개 scope 평가의 FN4도 다른 명제의 수치로 유지한다.
+
+### 확인된 결함·최소 보정
+
+개발 RED는 1 failed / 10 passed(8개 최종 사례 제외)였다. 실패는 d10의 IPv6 표기 분절이다. 추가 실제 worker API RED 3개(A/S/J)도 실패했다. Parser는 모두 4개 실패를 수용했지만 raw 주소 문자열별로 2개 cohort가 만들어져 각 2실패·2target·16초 및 LOW였고 Spray는 false였다. 이는 count와 time evidence 자체가 섞인 결함이 아니라, 동일 주소가 같은 F에 들어오지 못한 공유 정규화 결함이다.
+
+`normalize_source_ip()`를 기존 parser normalization utility에 추가하고 등록된 Batch·Live 및 승인형 mapping의 정규화 경계에서 호출한다. 같은 숫자 주소의 표기만 canonical string으로 바꾼다. DNS·forwarded header·account/actor 추정은 없다. absent/invalid 값의 admission을 확장하거나 scoped 주소를 재해석하지 않는다. 서로 다른 주소·주소 family는 유지한다. 원문 record는 그대로 보존하고 공개하지 않는다. Linux Audit의 별도 typed parsing 경로는 변경하지 않는다.
+
+수정 후 같은 입력이 1개 F, 4실패·3target·24초의 Spray 양성과 기존 계산에 따른 MEDIUM으로 분석된다. 세 로컬 API 요청은 기존 schema로 성공한다. 실패·계정·시간 threshold, whole-span 정책, Detector·Correlation·Risk 수식, API DTO, 공개 Evidence 필드에는 변경이 없다. 같은 주소의 분절이 해소되므로 파생 위험도·관계 입력은 달라질 수 있다.
+
+### 측정과 한계
+
+| 집합 | 유효 P/N | 수정 전 TP/FP/FN/TN | 수정 후 |
+| --- | --- | --- | --- |
+| 개발 10 | 5/5 | 4/0/1/5 | 5/0/0/5 |
+| 별도 최종 8 | 6/2 | 5/0/1/2 | 6/0/0/2 |
+| 전체 18 | 11/7 | 9/0/2/7 | 11/0/0/7 |
+
+개발 before는 실제 기준 Production 실행이다. 최종 before는 최종 후보 검증 후 새 normalization step만 identity 함수로 되돌린 경계 replay로 측정했다. Detector/feature 코드는 변경하지 않았으며 개발 before 실측과 replay도 일치했다. 최종 8개는 코드 수정에 재사용하지 않았다. 이 표는 고정 관찰 명제의 내부 합성 일치도이며 실환경 Password Spraying 탐지율이나 악의성 precision/recall이 아니다.
+
+입력 순서 permutation, offset가 다른 동일 UTC 시각, 60초 경계, raw record 불변, Batch/Live 공통 관찰과 mapping/access 주소 동등성, API/HTML/CLI Evidence의 private 값 비노출을 검사한다. CLI의 기존 validated-IP subject header 계약은 유지한다. NAT/승인 자동화는 여전히 같은 pattern을 낼 수 있고 계정 identity·중복 전달/실제 시도 수·동일 credential·수집 완전성은 관측되지 않는다. 전체 span 밖 noise, 저속·분산 시도, scoped 주소 및 IPv4/mapped-IPv6 통합은 이번 보정 범위 밖이다.
+
+DETECT-1 동결 자료·v1 replay·DETECT-2 미평가 의미를 유지한다. Snapshot은 13,783 bytes를 재생성하지 않고, 37개 source pin 중 실제 변경된 pipeline/time utility 2개만 갱신한다. 운영 NO_GO·S1 HOLD·Spray Window 후보의 기존 승인 경계를 바꾸지 않는다.

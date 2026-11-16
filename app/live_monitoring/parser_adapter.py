@@ -7,7 +7,7 @@ from app.live_monitoring.core import LiveTailRecord, MAX_COUNTER
 from app.loader.file_loader import preprocess_log_line
 from app.models.schemas import NormalizedEvent
 from app.parser import registry
-from app.parser.time_utils import normalize_to_utc
+from app.parser.time_utils import normalize_to_utc, normalize_source_ip
 
 
 _ERROR_MESSAGES = {
@@ -145,6 +145,7 @@ def parse_live_records(source_role: str, records: tuple[LiveTailRecord, ...]) ->
             raise LiveParseError("UNEXPECTED_PARSER_RESULT")
         try:
             event.timestamp = normalize_to_utc(event.timestamp)
+            event.src_ip = normalize_source_ip(event.src_ip)
         except (ValueError, TypeError, AttributeError):
             raise LiveParseError("UTC_NORMALIZATION_FAILURE") from None
         except Exception:

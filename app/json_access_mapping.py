@@ -1,4 +1,4 @@
-"""Narrow user-approved adapter. No aliases, transformations or format inference."""
+"""Narrow user-approved adapter. No field aliases, user transforms or format inference."""
 
 from datetime import datetime, timezone
 import ipaddress
@@ -15,6 +15,7 @@ from app.input_quality_36_12a import (
 )
 from app.models.json_access_mapping import JsonAccessFieldMapping, JsonAccessMappingRequest
 from app.models.schemas import HttpContext, NormalizedEvent
+from app.parser.time_utils import normalize_source_ip
 
 
 _TIMESTAMP = re.compile(
@@ -159,7 +160,7 @@ def normalize_mapped_access(text, mapping):
         path, _, query = target.partition("?")
         events.append(NormalizedEvent(
             timestamp=timestamp, event_type="http_request", source="access_log",
-            user=None, src_ip=address, dst_ip=None, application=None, protocol=None,
+            user=None, src_ip=normalize_source_ip(address), dst_ip=None, application=None, protocol=None,
             user_agent=None, raw="",  # Unmapped fields never enter the event.
             http=HttpContext(method=method, path=path, query=query or None,
                              status_code=status, response_size=None),
