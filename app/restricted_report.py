@@ -67,7 +67,7 @@ _RELATION_LABELS = {
     "failed_to_successful_login": "로그인 실패 뒤 로그인 성공 관찰",
     "brute_force_to_successful_login": "반복 인증 실패 탐지 뒤 로그인 성공 관찰",
     "successful_login_to_file_access": "로그인 성공 뒤 파일 접근 관찰",
-    "password_spray_to_successful_login": "여러 계정 인증 실패 탐지 뒤 로그인 성공 관찰",
+    "password_spray_to_successful_login": "여러 계정 실패 탐지 IP의 인증 실패 후 성공 관찰",
 }
 _OBSERVATION_LABEL_SET = {
     "로그인 실패", "로그인 성공 관찰", "HTTP 요청 관찰",

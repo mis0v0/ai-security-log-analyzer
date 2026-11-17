@@ -77,7 +77,7 @@ if (REVIEW_WORKFLOW_STATE_UI_ENABLED) await import("/assets/investigation-review
     "Brute Force 계약 미검증 관찰", "Brute Force 시간 미검증 관찰",
     "Password Spraying-like 계약 미검증 관찰", "Password Spraying-like 시간 미검증 관찰",
     "Failed Login → Successful Login", "Brute Force → Successful Login",
-    "Password Spraying-like → Successful Login", "Successful Login → File Access",
+    "Password Spraying-like IP: Failed Login → Successful Login", "Successful Login → File Access",
     "Failed Login → Successful Login 시간 미검증 관찰",
     "Brute Force → Successful Login 시간 미검증 관찰"
   ]);

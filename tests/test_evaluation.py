@@ -335,5 +335,5 @@ def test_spray_account_membership_not_promoted_to_case():
     projection = project_investigation_cases_from_analysis(result)
     assert [case.rule_code for case in projection.cases] == ["CASE-AUTH-TRANSITION-01"]
     assert {item.display_type for item in projection.independent_observations} == {
-        "Password Spraying-like", "Password Spraying-like → Successful Login"
+        "Password Spraying-like", "Password Spraying-like IP: Failed Login → Successful Login"
     }

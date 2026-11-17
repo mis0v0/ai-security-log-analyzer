@@ -78,7 +78,7 @@ _OBSERVATION_DISPLAY_NAMES = MappingProxyType({
         "Brute Force → Successful Login"
     ),
     "password_spray_to_successful_login": (
-        "Password Spraying-like → Successful Login"
+        "Password Spraying-like IP: Failed Login → Successful Login"
     ),
     "successful_login_to_file_access": (
         "Successful Login → File Access"
@@ -108,7 +108,7 @@ _PHASE_ONE_DISPLAY_NAMES = MappingProxyType({
         "Brute Force → Successful Login"
     ),
     "password_spray_to_successful_login": (
-        "Password Spraying-like → Successful Login"
+        "Password Spraying-like IP: Failed Login → Successful Login"
     ),
     "successful_login_to_file_access": (
         "Successful Login → File Access"
