@@ -60,7 +60,9 @@ _STATIC_RATIONALES = frozenset({
     "Brute Force 탐지 조건을 충족함",
     "Brute Force 탐지 이후 동일 계정의 로그인 성공이 확인됨",
     "Password Spraying-like 탐지 조건을 충족함",
-    "Password Spraying-like 탐지 이후 동일 계정의 로그인 성공이 확인됨",
+    "Password Spraying-like 탐지 IP에서 같은 계정 문자열의 인증 실패 후 로그인 성공이 관찰됨. "
+    "이 관계는 성공이 다중 계정 실패 패턴 완성 이후에 발생했음을 보장하지 않음. "
+    "동일 IP와 계정 문자열은 동일 행위자·교차 소스의 동일 계정·공격 성공을 입증하지 않음",
     "인증 실패 이후 동일 계정의 로그인 성공이 확인됨",
     "공격으로 판단할 만큼 강한 인증 이상 징후가 확인되지 않음",
     "Path Traversal 공격 패턴이 확인됨",

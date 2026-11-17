@@ -321,7 +321,9 @@ def evaluate_likelihood(features):
         )
 
         rationale.append(
-            "Password Spraying-like 탐지 이후 동일 계정의 로그인 성공이 확인됨"
+            "Password Spraying-like 탐지 IP에서 같은 계정 문자열의 인증 실패 후 로그인 성공이 관찰됨. "
+            "이 관계는 성공이 다중 계정 실패 패턴 완성 이후에 발생했음을 보장하지 않음. "
+            "동일 IP와 계정 문자열은 동일 행위자·교차 소스의 동일 계정·공격 성공을 입증하지 않음"
         )
 
         return {
@@ -822,7 +824,9 @@ def evaluate_confidence(features):
             "rationale": [
                 "여러 계정에 대한 짧은 시간 내 인증 실패가 확인됨",
                 "Password Spraying-like 탐지 조건을 충족함",
-                "Password Spraying-like 탐지 이후 동일 계정의 로그인 성공이 확인됨",
+                "Password Spraying-like 탐지 IP에서 같은 계정 문자열의 인증 실패 후 로그인 성공이 관찰됨. "
+                "이 관계는 성공이 다중 계정 실패 패턴 완성 이후에 발생했음을 보장하지 않음. "
+                "동일 IP와 계정 문자열은 동일 행위자·교차 소스의 동일 계정·공격 성공을 입증하지 않음",
                 "실제 비밀번호 재사용 여부는 로그에서 확인되지 않음",
             ],
         }

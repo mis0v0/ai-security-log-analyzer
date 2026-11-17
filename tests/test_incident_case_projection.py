@@ -396,7 +396,7 @@ def test_independent_path_brute_and_spray_are_preserved_without_raw_evidence():
     assert {item.display_type for item in projection.independent_observations} == {
         "Brute Force 계약 미검증 관찰",
         "Password Spraying-like",
-        "Password Spraying-like → Successful Login",
+        "Password Spraying-like IP: Failed Login → Successful Login",
         "Path Traversal",
     }
     path = next(

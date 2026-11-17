@@ -430,7 +430,7 @@ def test_spray_mapping_stays_no_go_and_independent():
     assert projection.summary.spray_no_go_observation_count == 2
     assert {item.display_type for item in projection.independent_observations} == {
         "Password Spraying-like",
-        "Password Spraying-like → Successful Login",
+        "Password Spraying-like IP: Failed Login → Successful Login",
     }
 
 

@@ -413,3 +413,19 @@ DETECT-1 동결 자료·v1 replay·DETECT-2 미평가 의미를 유지한다. Sn
 `tests/test_mixed_linux_audit_ip_detect_3_p2.py`는 Audit 단독·혼합, HTML·CLI, 순서, 멱등성, 주소 family·scope 분리 및 Process/Session/raw metadata 보존을 확인한다. Audit source/session identity는 IP로 대체하지 않는다. 이번 source pin 변경은 pipeline 하나뿐이며 Snapshot payload는 재생성하지 않는다.
 
 Live publication 테스트는 100ms soft cycle budget 소진 시 남은 역할이 다음 cycle에서 처리되는 계약을 검증하도록 보정한다. Runtime 예산은 변경하지 않는다. 이는 재현한 실패 경로이며 과거 실패의 실제 경과 시간을 측정했다는 뜻은 아니다. 브라우저 `CHECKLIST_ANALYSIS_MUTATION`의 과거 간헐 실패 원인은 별도로 미확정(`UNRESOLVED_INTERMITTENT`)이다. 합성 회귀 통과는 실환경 공격 탐지율이나 운영 승인 근거가 아니며 운영 NO_GO·S1 HOLD를 유지한다.
+
+## DETECT-4 — 기존 Spray 관계의 소비자 표현 보정
+
+R4A의 28개 manifest·fixture·라벨과 C0~C3 평가를 그대로 재사용한다. 당시 이미 알려진 pre-completion 관계를 새 발견으로 세지 않는다. 현재 Production 전체 경로에서 새로 확인한 것은 관계 문구가 Risk rationale을 통해 HTML·Local API에 전달되고, 승인되지 않은 Spray-success Case는 계속 차단되지만 독립 관찰 이름에도 패턴→성공처럼 보이는 표현이 남아 있었다는 점이다.
+
+`same_account_success_before_completion`은 실제 Loader/Parser 입력으로 실패 0초→성공 12초, 4실패·4계정 조건 완성 15초를 만든다. Boolean을 강제하지 않아도 Spray와 해당 pair가 참이다. Whole-span Detector와 가장 가까운 동일 IP·알려진 계정 문자열 pair라는 기존 규칙은 패턴 완성 이후의 성공을 보장하지 않는다. 실패 집합의 최종 시각과 조건이 최초 성립한 시각도 일반적으로 같지 않다.
+
+이번 보정은 endpoint·Boolean·4/3/60·Risk 등급/분기·Case 규칙을 유지한다. Correlation·Risk 문구를 'Spray-like 탐지 IP에서 같은 계정 문자열의 실패 후 성공 관찰'로 제한하고 패턴 완성 이후라는 보장, 동일 행위자·cross-source principal·공격 성공을 부정한다. 독립 관찰 표시명은 `Password Spraying-like IP: Failed Login → Successful Login`으로 바꾸고 기존 UI의 닫힌 표시명 검증도 함께 이동한다. 기존 relation ID는 호환성을 위해 유지하며 새 시간 anchor를 뜻하지 않는다. CLI와 Restricted Report도 같은 제한 의미를 표시한다. Report의 Spray 특수 관계 직접 노출 제한, 근거 최대 5항목, Public DTO 필드와 Case NO_GO는 유지한다. 활성화되지 않은 Spray-success Case의 Guidance/Checklist 후보 매핑은 이번에 활성화하거나 확장하지 않는다.
+
+Spray-only도 현행 규칙에서 HIGH likelihood다. 이 반례에서 relation이 likelihood를 MEDIUM에서 HIGH로 올렸다고 설명하면 틀리다. 실제로 변하는 것은 Confidence MEDIUM→HIGH이며 이 역시 기존 관찰 근거 heuristic이다. 공격 확률이나 credential compromise를 의미하지 않는다. 해당 등급을 재설계하거나 completion anchor를 새로 적용하는 일은 별도 정책 결정이다.
+
+R4A evaluator는 60초+1µs fixture에 명시적인 post-parser 보정을 적용한다. 보정 없는 원본 파일 재실행은 정수 초 60초를 시험하므로 actual relation 14개가 나올 수 있다. 기존 evaluator의 C0 actual 13개와 분모를 혼합하거나 이를 탐지 향상·회귀로 부르지 않는다. 28개 C0~C3 평가 결과는 기존 방식으로 재현한다.
+
+Research Basis는 기존 R4A와 같은 [MITRE T1110.003](https://attack.mitre.org/techniques/T1110/003/) v1.8(2026-11-04) 및 [Microsoft Entra sign-in activity details](https://learn.microsoft.com/en-us/entra/identity/monitoring-health/concept-sign-in-log-activity-details)를 다시 확인했다. 전자는 다중 계정에 적은 수의 비밀번호를 시도하는 행동을 정의하지만 현재 입력에는 비밀번호가 없다. 후자는 제품별 identity/request/session 식별자를 구분하며 이 Parser가 그런 식별자를 제공한다는 근거가 아니다. 관찰 가능한 timestamp·event type·source IP·계정 문자열만 실제 pair와 연결한다. 4/3/60과 pair 60초는 기존 프로젝트 heuristic이며 공식 기준으로 승격하지 않는다.
+
+새 회귀는 기존 입력의 실제 Correlation→Risk→Case→HTML·Local API·CLI와 Restricted Report를 확인한다. 동등 IPv6 표기·혼합 Audit 기록·행/source 순서도 확인하되 `USER_AUTH`를 일반 실패나 성공 endpoint로 바꾸지 않는다. 기존 wrong-run/위조 Evidence 거부는 기존 테스트로 재검증한다. Snapshot bytes·동결 corpus·C3 evaluation-only 경계를 유지한다. `CORRELATION_ANCHOR_UNRESOLVED`, `MORE_EVIDENCE_REQUIRED`, Window NO_GO, S1 HOLD, 운영 NO_GO 및 브라우저 `UNRESOLVED_INTERMITTENT`는 해제하지 않는다.

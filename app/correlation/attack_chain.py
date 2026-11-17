@@ -278,8 +278,10 @@ def correlate_password_spray_to_success(
             "success_timestamp": success.timestamp,
             "time_delta_seconds": delta,
             "rationale": [
-                f"{success.user} 계정에서 Password Spray 유사 탐지 이후 로그인 성공이 확인됨",
-                f"마지막 인증 실패와 로그인 성공 사이의 시간 차이는 {delta:.1f}초임",
+                "Password Spraying-like 탐지 IP에서 같은 계정 문자열의 인증 실패 후 로그인 성공이 관찰됨",
+                f"선택된 인증 실패와 로그인 성공 사이의 시간 차이는 {delta:.1f}초임",
+                "이 관계는 성공이 다중 계정 실패 패턴 완성 이후에 발생했음을 보장하지 않음",
+                "동일 IP와 계정 문자열은 동일 행위자·교차 소스의 동일 계정·공격 성공을 입증하지 않음",
             ],
         }
 

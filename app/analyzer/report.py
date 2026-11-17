@@ -272,6 +272,11 @@ def print_correlation_result(correlation):
 
         relation_type = result.get("type")
         print(f"  - {relation_type if relation_type in _SUPPORTED_RELATION_TYPES else '지원 범위 밖의 관계'}")
+        if relation_type == "password_spray_to_successful_login":
+            # Preserve the legacy identifier without interpreting its name as
+            # a completion anchor or printing private correlation rationale.
+            print("    Password Spraying-like 탐지 IP에서 같은 계정 문자열의 인증 실패 후 로그인 성공이 관찰됨")
+            print("    이 관계는 성공이 다중 계정 실패 패턴 완성 이후에 발생했음을 보장하지 않음")
 
         if result.get("user") is not None:
 
