@@ -47,8 +47,9 @@ def test_ci_and_frontend_preserve_boundaries():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     script = (ROOT / "tests" / "ui_accessibility_axe_pilot_28_1.mjs").read_text(encoding="utf-8")
     for term in (
-        "node-version: \"24.10.0\"", "npm ci --ignore-scripts --no-audit --no-fund",
-        "playwright install chromium --only-shell", "sha512sum --check --status",
+        "node-version: \"24.22.3\"", "npm ci --ignore-scripts --no-audit --no-fund",
+        "sha256(package).hexdigest() != expected", "dpkg-deb --extract",
+        "ASLA_TEST_CHROME:",
         "npm run test:a11y --silent",
     ):
         assert term in ci

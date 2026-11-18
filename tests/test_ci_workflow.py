@@ -138,10 +138,35 @@ def test_ci_has_no_secrets_privileged_install_or_deployment_commands():
     ):
         assert forbidden not in text
     assert re.search(r"(?m)^(?:env:|  env:|    env:)\s*$", text) is None
-    assert re.findall(r"(?m)^        env:\s*$", text) == ["        env:"] * 3
-    assert "playwright_browsers_path: ${{ runner.temp }}/playwright-browsers" in text
+    assert re.findall(r"(?m)^        env:\s*$", text) == ["        env:"] * 2
     assert "tz: utc" in text
     assert re.search(r"(?m)^\s*[a-z-]+:\s*write\s*$", text) is None
+
+
+def test_ci_provisions_verified_chrome_before_running_accessibility_checks():
+    text = _text()
+    steps = (
+        "npm ci --ignore-scripts --no-audit --no-fund",
+        "sha256(package).hexdigest() != expected",
+        'dpkg-deb --extract "$TEST_CHROME_DIR/chrome.deb" "$TEST_CHROME_DIR"',
+        "npm run test:a11y --silent",
+    )
+    positions = [text.index(step) for step in steps]
+    assert positions == sorted(positions)
+    assert "https://dl.google.com/linux/chrome/deb/" in text
+    assert re.search(r'google-chrome-stable_[0-9.]+-1_amd64\.deb"', text)
+    assert re.search(r'expected = "[0-9a-f]{64}"', text)
+    assert "ASLA_TEST_CHROME: ${{ runner.temp }}/asla-chrome/opt/google/chrome/chrome" in text
+    for forbidden in ("playwright install", "PLAYWRIGHT_BROWSERS_PATH", "--no-sandbox"):
+        assert forbidden not in text
+
+    launcher = (ROOT / "tests" / "a11y_browser.mjs").read_text(encoding="utf-8")
+    assert "chromiumSandbox: true" in launcher
+    assert "executablePath," in launcher
+    assert "--no-sandbox" not in launcher
+    for name in ("ui_accessibility_axe_pilot_28_1.mjs", "ui_json_access_mapping_real_log_3.mjs"):
+        entrypoint = (ROOT / "tests" / name).read_text(encoding="utf-8")
+        assert "await launchTestChrome()" in entrypoint
 
 
 def test_ci_contains_no_sensitive_or_machine_local_literals():

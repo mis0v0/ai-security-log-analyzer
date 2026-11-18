@@ -1,6 +1,6 @@
 // Development-only browser checks. Print rule IDs/counts, never axe nodes or DOM text.
 import AxeBuilder from '@axe-core/playwright';
-import {chromium} from '@playwright/test';
+import {launchTestChrome} from './a11y_browser.mjs';
 import {spawn} from 'node:child_process';
 import {mkdtemp, mkdir, readFile, rm} from 'node:fs/promises';
 import {createServer} from 'node:net';
@@ -589,10 +589,7 @@ async function main() {
     requireSafe(csp.includes("script-src 'self'") && csp.includes("connect-src 'self'") &&
       csp.includes("img-src 'none'") && !csp.includes('unsafe-inline') &&
       response.headers.get('x-content-type-options') === 'nosniff', 'CSP_CONTRACT_FAILED');
-    browser = await chromium.launch({headless: true, args: [
-      '--disable-background-networking', '--no-first-run',
-      '--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE 127.0.0.1',
-    ]});
+    browser = await launchTestChrome();
     context = await browser.newContext({
       serviceWorkers: 'block', acceptDownloads: true,
       proxy: {server: 'http://127.0.0.1:9', bypass: '127.0.0.1,localhost'},
