@@ -5,6 +5,8 @@ import hashlib
 import os
 from pathlib import Path
 import platform
+import re
+import shutil
 import subprocess
 import tempfile
 
@@ -34,11 +36,33 @@ PYTHON = Artifact(
 )
 
 
-def fetch_and_verify(artifact: Artifact, directory: Path) -> Path:
+def require_verifier() -> str:
+    # Use the runner's system-installed CLI. Do not bootstrap or trust a
+    # checkout-relative PATH entry for the root of this verification chain.
+    gh = shutil.which("gh", path=os.defpath)
+    if gh is None:
+        raise RuntimeError("Runner GitHub CLI is missing")
+    env = {"PATH": os.defpath, "GH_NO_UPDATE_NOTIFIER": "1", "GH_NO_EXTENSION_UPDATE_NOTIFIER": "1"}
+    version = subprocess.run(
+        [gh, "--version"], check=True, timeout=10, capture_output=True, text=True, env=env,
+    ).stdout.partition("\n")[0]
+    match = re.fullmatch(r"gh version ([0-9]+)\.([0-9]+)\.([0-9]+)(?: \(\d{4}-\d{2}-\d{2}\))?", version)
+    # GHSA-wjmr-j3rp-mh2g and the source-ref matching fix shipped in 2.102.0.
+    if match is None or tuple(map(int, match.groups())) < (2, 102, 0):
+        raise RuntimeError("Runner GitHub CLI must be a stable version 2.102.0 or newer")
+    for command in (("release", "verify-asset"), ("attestation", "verify")):
+        subprocess.run(
+            [gh, *command, "--help"], check=True, timeout=10, stdout=subprocess.DEVNULL, env=env,
+        )
+    print(f"Verified runner CLI version floor: {version}", flush=True)
+    return gh
+
+
+def fetch_and_verify(gh: str, artifact: Artifact, directory: Path) -> Path:
     archive = directory / artifact.name
     repo = artifact.repository
     subprocess.run([
-        "gh", "release", "download", artifact.tag, "--repo", repo,
+        gh, "release", "download", artifact.tag, "--repo", repo,
         "--pattern", artifact.name, "--dir", str(directory),
     ], check=True, timeout=120)
     with archive.open("rb") as stream:
@@ -47,14 +71,14 @@ def fetch_and_verify(artifact: Artifact, directory: Path) -> Path:
 
     # GitHub's release attestation binds these bytes to the exact release tag.
     subprocess.run([
-        "gh", "release", "verify-asset", artifact.tag, str(archive), "--repo", repo,
+        gh, "release", "verify-asset", artifact.tag, str(archive), "--repo", repo,
     ], check=True, timeout=120)
     # The publisher's build attestation binds those same bytes to the release
     # workflow and exact source commit. Both upstream workflows ran from main.
     subprocess.run([
-        "gh", "attestation", "verify", str(archive), "--repo", repo,
+        gh, "attestation", "verify", str(archive), "--repo", repo,
         "--predicate-type", "https://slsa.dev/provenance/v1", "--signer-repo", repo,
-        "--signer-workflow", f"{repo}/.github/workflows/release.yml",
+        "--signer-workflow", f"{repo}/.github/workflows/release.yml@refs/heads/main",
         "--source-ref", "refs/heads/main", "--source-digest", artifact.source_commit,
     ], check=True, timeout=120)
     return archive
@@ -62,7 +86,8 @@ def fetch_and_verify(artifact: Artifact, directory: Path) -> Path:
 
 def provision(directory: Path) -> tuple[Path, Path]:
     # Verify the full set before extracting either archive. No fallback path.
-    archives = [fetch_and_verify(artifact, directory) for artifact in (UV, PYTHON)]
+    gh = require_verifier()
+    archives = [fetch_and_verify(gh, artifact, directory) for artifact in (UV, PYTHON)]
     for archive in archives:
         subprocess.run([
             "tar", "--extract", "--gzip", "--no-same-owner", "--no-same-permissions",

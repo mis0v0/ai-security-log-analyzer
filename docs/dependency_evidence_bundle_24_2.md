@@ -45,6 +45,8 @@ uv 0.13.9의 오프라인 카탈로그와 일치하는 Python stripped 변형이
 
 CI는 정확한 이름의 파일만 받아 SHA-256을 검사한다. 이어 `gh release verify-asset`으로 GitHub의 서명된 릴리스 attestation을 검증해 digest와 저장소·태그를 결속한다. 별도로 `gh attestation verify`는 Astral 빌드 증명이 SLSA provenance v1이며 서명 저장소와 `.github/workflows/release.yml`, 빌드 소스 ref `refs/heads/main` 및 태그가 가리키는 고정 소스 커밋과 일치하는지 검증한다. 이 빌드 ref와 릴리스 태그는 서로 다른 검증 항목이다. 공개 메타데이터에서 두 종류의 증명이 각 digest에 등록된 것을 확인했다. Python 빌드 증명은 self-hosted upstream runner를 기록한다. [GitHub 릴리스 검증](https://cli.github.com/manual/gh_release_verify-asset), [GitHub 빌드 증명 검증](https://cli.github.com/manual/gh_attestation_verify)
 
+SEC-4-R3부터 CI는 시스템 경로의 안정 릴리스 GitHub CLI 2.102.0 이상을 요구하고, 두 검증 하위 명령의 도움말을 먼저 확인한다. 버전이나 명령 확인 실패 시 아카이브를 받기 전에 중단한다. 2.102.0은 signer workflow 전체 경로 및 source ref의 대소문자 비교를 바로잡은 버전이다. 서명 workflow는 `.github/workflows/release.yml@refs/heads/main` 전체를 고정한다. [GitHub CLI 권고](https://github.com/cli/cli/security/advisories/GHSA-wjmr-j3rp-mh2g), [2.102.0 보안 릴리스](https://github.com/cli/cli/releases/tag/v2.102.0)
+
 두 아카이브가 모두 검증된 뒤에만 임시 디렉터리에 추출한다. 누락·불일치·검증기 오류는 작업을 실패시키며 이전 도구로 되돌아가는 경로는 없다. 워크플로는 캐시를 사용하지 않고 검증한 Python의 절대 경로를 선택하며 Python 자동 다운로드를 금지한다. 기존 locked/no-build 설치와 revision 3 증거 검사는 유지한다.
 
 로컬 테스트는 검증기 성공·오류를 합성 fixture로 대체해 제어 흐름을 확인했다. 실제 Ubuntu 아카이브 다운로드, 암호학적 검증, 추출·실행, locked 설치 및 전체 CI는 미검증이다. 별도 승인 후 Ubuntu 24.04에서 읽기 전용 토큰을 사용하는 러너 제공 `gh`의 두 검증 명령이 모두 성공하는지 확인하고, 후보 SHA의 고정 버전·lock·증거 번들·전체 회귀 결과를 기록한다. 브라우저와 실제 HTTP 검증은 별도 게이트다. `INSTALL_HOLD`를 유지한다.

@@ -42,6 +42,7 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
     uv = replace(TOOLCHAIN.UV, sha256=sha256(uv_bytes).hexdigest())
     python = replace(TOOLCHAIN.PYTHON, sha256=sha256(python_bytes).hexdigest())
     namespace = TOOLCHAIN.provision.__globals__
+    monkeypatch.setitem(namespace, "require_verifier", lambda: "/usr/bin/gh")
     monkeypatch.setitem(namespace, "UV", uv)
     monkeypatch.setitem(namespace, "PYTHON", python)
     calls = []
@@ -66,7 +67,7 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
         archive = tmp_path / artifact.name
         if command[1:3] == ["release", "download"]:
             assert command == [
-                "gh", "release", "download", artifact.tag, "--repo", repo,
+                "/usr/bin/gh", "release", "download", artifact.tag, "--repo", repo,
                 "--pattern", artifact.name, "--dir", str(tmp_path),
             ]
             if artifact == python and failure == "wrong-platform":
@@ -74,14 +75,14 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
             else:
                 archive.write_bytes(b"mismatched" if artifact == python and failure == "sha256" else data)
         elif command[1:3] == ["release", "verify-asset"]:
-            assert command == ["gh", "release", "verify-asset", artifact.tag, str(archive), "--repo", repo]
+            assert command == ["/usr/bin/gh", "release", "verify-asset", artifact.tag, str(archive), "--repo", repo]
             if artifact == python and failure == "release-ref":
                 raise subprocess.CalledProcessError(1, command)
         else:
             assert command == [
-                "gh", "attestation", "verify", str(archive), "--repo", repo,
+                "/usr/bin/gh", "attestation", "verify", str(archive), "--repo", repo,
                 "--predicate-type", "https://slsa.dev/provenance/v1", "--signer-repo", repo,
-                "--signer-workflow", f"{repo}/.github/workflows/release.yml",
+                "--signer-workflow", f"{repo}/.github/workflows/release.yml@refs/heads/main",
                 "--source-ref", "refs/heads/main", "--source-digest", artifact.source_commit,
             ]
             if artifact == python and failure == "verifier-error":
@@ -96,7 +97,7 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
     if failure is None:
         uv_dir, interpreter = TOOLCHAIN.provision(tmp_path)
         assert (uv_dir / "uv").is_file() and interpreter.is_file()
-        assert [command[0] for command in calls] == ["gh"] * 6 + ["tar"] * 2
+        assert [command[0] for command in calls] == ["/usr/bin/gh"] * 6 + ["tar"] * 2
     else:
         stop_error = {
             "sha256": ValueError, "wrong-platform": FileNotFoundError,
@@ -107,3 +108,47 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
         assert all(command[0] != "tar" for command in calls)
         assert not (tmp_path / "python/bin/python3.12").exists()
         assert not (tmp_path / "uv-x86_64-unknown-linux-gnu/uv").exists()
+
+
+
+@pytest.mark.parametrize(("version", "unavailable", "error"), [
+    ("gh version 2.102.0 (2026-09-30)", None, None),
+    ("gh version 2.103.3", None, None),
+    ("gh version 2.101.0", None, RuntimeError),
+    ("gh version 2.102.0-rc.1", None, RuntimeError),
+    ("unknown", None, RuntimeError),
+    (None, None, RuntimeError),
+    ("gh version 2.103.3", "verify-asset", subprocess.CalledProcessError),
+    ("gh version 2.103.3", "verify", subprocess.CalledProcessError),
+])
+def test_verifier_preflight_blocks_downloads(tmp_path, monkeypatch, version, unavailable, error):
+    path = "/usr/bin/gh"
+    calls = []
+
+    def which(name, *, path):
+        assert name == "gh" and path == TOOLCHAIN.os.defpath
+        return "/usr/bin/gh" if version is not None else None
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert command[0] == path
+        if command[1:] == ["--version"]:
+            return SimpleNamespace(stdout=version + "\n")
+        assert command[-1] == "--help"
+        assert "GH_TOKEN" not in kwargs["env"]
+        if command[-2] == unavailable:
+            raise subprocess.CalledProcessError(1, command)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(TOOLCHAIN.shutil, "which", which)
+    monkeypatch.setattr(subprocess, "run", run)
+    if error is None:
+        assert TOOLCHAIN.require_verifier() == path
+        assert [command[1:] for command in calls] == [
+            ["--version"], ["release", "verify-asset", "--help"], ["attestation", "verify", "--help"],
+        ]
+    else:
+        with pytest.raises(error):
+            TOOLCHAIN.provision(tmp_path)
+        assert all(command[1:] == ["--version"] or command[-1] == "--help" for command in calls)
+        assert list(tmp_path.iterdir()) == []
