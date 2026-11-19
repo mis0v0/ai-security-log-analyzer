@@ -226,11 +226,22 @@ def test_default_setup_show_monitor_delete_lifecycle(tmp_path: Path) -> None:
         with source.open("a", encoding="utf-8") as stream:
             stream.write(APP_LINE)
         deadline = time.monotonic() + 6
+        last_timeout = None
         while time.monotonic() < deadline:
-            _, body = _get_json(port, "/api/v1/live/status")
-            if body["latest_detection_revision"] >= 1:
-                break
+            assert process.poll() is None, "local runtime exited before the appended log was processed"
+            try:
+                status, body = _get_json(port, "/api/v1/live/status")
+            except TimeoutError as error:
+                # A single 0.5 s HTTP poll can time out within the existing
+                # six-second budget. Preserve the cause if progress never arrives.
+                last_timeout = error
+            else:
+                assert status == 200
+                if body["latest_detection_revision"] >= 1:
+                    break
             time.sleep(0.05)
+        else:
+            raise AssertionError("live status did not publish the appended log within six seconds") from last_timeout
         assert body["analysis_revision"] == body["latest_detection_revision"]
         cancelled = subprocess.run([sys.executable, "-m", "app.monitor_setup", "--delete"],
                                    input="no\n", env=env, capture_output=True, text=True, timeout=8)
