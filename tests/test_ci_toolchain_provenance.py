@@ -79,9 +79,11 @@ def test_gate_stops_before_extraction_on_invalid_evidence(monkeypatch, tmp_path,
             if artifact == python and failure == "release-ref":
                 raise subprocess.CalledProcessError(1, command)
         else:
+            identity_flags = {"--cert-identity", "--cert-identity-regex", "--signer-repo", "--signer-workflow"}
+            assert identity_flags.intersection(command) == {"--signer-workflow"}
             assert command == [
                 "/usr/bin/gh", "attestation", "verify", str(archive), "--repo", repo,
-                "--predicate-type", "https://slsa.dev/provenance/v1", "--signer-repo", repo,
+                "--predicate-type", "https://slsa.dev/provenance/v1",
                 "--signer-workflow", f"{repo}/.github/workflows/release.yml@refs/heads/main",
                 "--source-ref", "refs/heads/main", "--source-digest", artifact.source_commit,
             ]
