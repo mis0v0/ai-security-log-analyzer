@@ -38,21 +38,16 @@ def _empty_analysis():
     }
 
 
-def _track_api_temp_files(monkeypatch, tmp_path: Path) -> list[Path]:
-    original = api_module.tempfile.NamedTemporaryFile
+def _track_api_temp_files(monkeypatch) -> list[Path]:
+    original = api_module.save_upload_to_temp
     created_paths: list[Path] = []
 
-    def tracked_named_temporary_file(*args, **kwargs):
-        kwargs["dir"] = tmp_path
-        temp_file = original(*args, **kwargs)
-        created_paths.append(Path(temp_file.name))
-        return temp_file
+    def tracked_upload(*args, **kwargs):
+        path = original(*args, **kwargs)
+        created_paths.append(Path(path))
+        return path
 
-    monkeypatch.setattr(
-        api_module.tempfile,
-        "NamedTemporaryFile",
-        tracked_named_temporary_file,
-    )
+    monkeypatch.setattr(api_module, "save_upload_to_temp", tracked_upload)
     return created_paths
 
 
@@ -63,8 +58,8 @@ def test_upload_test_route_is_absent_and_does_not_create_api_temp_file(
         raise AssertionError("removed route must not create an API temp file")
 
     monkeypatch.setattr(
-        api_module.tempfile,
-        "NamedTemporaryFile",
+        api_module,
+        "save_upload_to_temp",
         fail_if_called,
     )
     client = TestClient(api_module.app)
@@ -114,9 +109,8 @@ def test_health_contract_is_unchanged():
 
 def test_analyze_success_serialization_cleanup_and_llm_isolation(
     monkeypatch,
-    tmp_path,
 ):
-    created_paths = _track_api_temp_files(monkeypatch, tmp_path)
+    created_paths = _track_api_temp_files(monkeypatch)
     analyze_calls = []
 
     def fake_analyze(log_sources):
@@ -176,7 +170,6 @@ def test_analyze_success_serialization_cleanup_and_llm_isolation(
 
 def test_analyze_validation_and_suffix_error_contracts_are_unchanged(
     monkeypatch,
-    tmp_path,
 ):
     client = TestClient(api_module.app)
 
@@ -184,7 +177,7 @@ def test_analyze_validation_and_suffix_error_contracts_are_unchanged(
     assert validation_response.status_code == 422
     assert validation_response.json()["detail"]
 
-    created_paths = _track_api_temp_files(monkeypatch, tmp_path)
+    created_paths = _track_api_temp_files(monkeypatch)
     invalid_files = _analyze_files()
     invalid_files["ssh_file"] = (
         "ssh.csv",
@@ -204,9 +197,8 @@ def test_analyze_validation_and_suffix_error_contracts_are_unchanged(
 
 def test_analyze_cleanup_is_preserved_when_analysis_fails(
     monkeypatch,
-    tmp_path,
 ):
-    created_paths = _track_api_temp_files(monkeypatch, tmp_path)
+    created_paths = _track_api_temp_files(monkeypatch)
 
     def fail_analysis(log_sources):
         assert all(Path(source["path"]).exists() for source in log_sources)
@@ -224,3 +216,42 @@ def test_analyze_cleanup_is_preserved_when_analysis_fails(
 
     assert len(created_paths) == 3
     assert all(not path.exists() for path in created_paths)
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+@pytest.mark.parametrize("streamed", [False, True])
+def test_analyze_total_multipart_boundary(monkeypatch, extra, streamed):
+    files = _analyze_files()
+    with TestClient(api_module.create_app()) as client:
+        request = client.build_request("POST", "/api/analyze", files=files)
+        body = request.read()
+        content_type = request.headers["content-type"]
+
+    calls = []
+
+    def analyze(sources):
+        calls.append(sources)
+        return _empty_analysis()
+
+    monkeypatch.setattr(api_module, "MAX_LEGACY_BODY_SIZE", len(body) - extra)
+    monkeypatch.setattr(api_module, "analyze", analyze)
+    with TestClient(api_module.create_app()) as client:
+        content = iter((body[:len(body) // 2], body[len(body) // 2:])) if streamed else body
+        request = client.build_request(
+            "POST", "/api/analyze", content=content, headers={"content-type": content_type},
+        )
+        assert ("content-length" not in request.headers) == streamed
+        response = client.send(request)
+    assert response.status_code == (413 if extra else 200)
+    assert len(calls) == (0 if extra else 1)
+
+
+def test_analyze_accepts_exact_file_limit_and_cleans_staging(monkeypatch):
+    monkeypatch.setattr(api_module, "MAX_FILE_SIZE", 32)
+    paths = _track_api_temp_files(monkeypatch)
+    monkeypatch.setattr(api_module, "analyze", lambda sources: _empty_analysis())
+    with TestClient(api_module.create_app()) as client:
+        assert client.post("/api/analyze", files=_analyze_files(b"a" * 32)).status_code == 200
+        assert client.post("/api/analyze", files=_analyze_files(b"a" * 33)).status_code == 400
+    assert len(paths) == 3
+    assert all(not path.exists() for path in paths)

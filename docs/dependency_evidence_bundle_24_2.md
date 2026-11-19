@@ -31,3 +31,22 @@ Manifest는 닫힌 key 집합을 검증한다. timestamp, machine ID, 절대 경
 License는 installed distribution metadata, PyPI metadata와 원본 package license의 차이를 별도로 검토해야 하며 이번 manifest의 필수 무결성 필드가 아니다. unknown/dual license를 임의 값으로 축약하지 않는다. Vulnerability는 특정 DB snapshot의 조회 결과이고 package의 단순 존재가 exploitability가 아니다. Phase 24.1의 OSV `-L`은 SBOM을 0 package로 추출해 false zero를 냈고 `-S`는 deprecated다. 따라서 이 bundle을 OSV와 자동 연결하거나 0 finding을 주장하지 않는다. 향후 공식 지원 입력과 package count가 검증되기 전까지 자동 vulnerability gate는 NO-GO다.
 
 개발용 5회 warm 표본은 median **1.165초**, nearest-rank p95/max **1.209초**였다(uv export 4회, 별도 private uv cache, private write/validation 포함; macOS arm64, uv 0.11.26). 네트워크 사용·실제 DB scan은 없다. 운영 SLA나 CI 상한이 아니다. PR 후보는 임시 bundle 생성·계약·결정성 검증 후 삭제이며 이번 단계에 workflow를 추가하지 않았다. Scheduled/release vulnerability 검사는 별도 provenance·DB snapshot gate가 필요하다. raw SBOM/report를 GitHub artifact로 업로드하거나 공개 Release에 첨부하려면 별도 승인이다.
+
+## SEC-4-R2 Ubuntu CI toolchain candidate
+
+위 Phase 24.2 기록은 당시 도구와 측정 결과다. CI 후보는 Ubuntu 24.04 x86_64 GNU에서 다음 두 파일을 고정한다.
+
+| 배포 저장소와 태그 | 아카이브 | 공개 SHA-256 |
+| --- | --- | --- |
+| `astral-sh/uv` · `0.13.9` | `uv-x86_64-unknown-linux-gnu.tar.gz` | `a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5` |
+| `astral-sh/python-build-standalone` · `20261110` | `cpython-3.12.16+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz` | `6a9e62dad033790aef722dbd370e0ce76ce17b73627ba3ae679f537049350b39` |
+
+uv 0.13.9의 오프라인 카탈로그와 일치하는 Python stripped 변형이다. 별도의 `install_only.tar.gz`는 SHA-256 `c2f87d4b4e8db3abddb0f116c6ccfc503d0cbdbb9ee8faacddad1b679ec12e99`를 가지며 이 워크플로의 입력 범위 밖이다. 두 upstream GitHub Release의 공개 메타데이터에서 이름·해시와 태그 대상 커밋을 대조했다. [uv 릴리스](https://github.com/astral-sh/uv/releases/tag/0.13.9), [Python 릴리스](https://github.com/astral-sh/python-build-standalone/releases/tag/20261110)
+
+CI는 정확한 이름의 파일만 받아 SHA-256을 검사한다. 이어 `gh release verify-asset`으로 GitHub의 서명된 릴리스 attestation을 검증해 digest와 저장소·태그를 결속한다. 별도로 `gh attestation verify`는 Astral 빌드 증명이 SLSA provenance v1이며 서명 저장소와 `.github/workflows/release.yml`, 빌드 소스 ref `refs/heads/main` 및 태그가 가리키는 고정 소스 커밋과 일치하는지 검증한다. 이 빌드 ref와 릴리스 태그는 서로 다른 검증 항목이다. 공개 메타데이터에서 두 종류의 증명이 각 digest에 등록된 것을 확인했다. Python 빌드 증명은 self-hosted upstream runner를 기록한다. [GitHub 릴리스 검증](https://cli.github.com/manual/gh_release_verify-asset), [GitHub 빌드 증명 검증](https://cli.github.com/manual/gh_attestation_verify)
+
+SEC-4-R3부터 CI는 시스템 경로의 안정 릴리스 GitHub CLI 2.102.0 이상을 요구하고, 두 검증 하위 명령의 도움말을 먼저 확인한다. 버전이나 명령 확인 실패 시 아카이브를 받기 전에 중단한다. 2.102.0은 signer workflow 전체 경로 및 source ref의 대소문자 비교를 바로잡은 버전이다. 서명 workflow는 `.github/workflows/release.yml@refs/heads/main` 전체를 고정한다. [GitHub CLI 권고](https://github.com/cli/cli/security/advisories/GHSA-wjmr-j3rp-mh2g), [2.102.0 보안 릴리스](https://github.com/cli/cli/releases/tag/v2.102.0)
+
+두 아카이브가 모두 검증된 뒤에만 임시 디렉터리에 추출한다. 누락·불일치·검증기 오류는 작업을 실패시키며 이전 도구로 되돌아가는 경로는 없다. 워크플로는 캐시를 사용하지 않고 검증한 Python의 절대 경로를 선택하며 Python 자동 다운로드를 금지한다. 기존 locked/no-build 설치와 revision 3 증거 검사는 유지한다.
+
+로컬 테스트는 검증기 성공·오류를 합성 fixture로 대체해 제어 흐름을 확인했다. 실제 Ubuntu 아카이브 다운로드, 암호학적 검증, 추출·실행, locked 설치 및 전체 CI는 미검증이다. 별도 승인 후 Ubuntu 24.04에서 읽기 전용 토큰을 사용하는 러너 제공 `gh`의 두 검증 명령이 모두 성공하는지 확인하고, 후보 SHA의 고정 버전·lock·증거 번들·전체 회귀 결과를 기록한다. 브라우저와 실제 HTTP 검증은 별도 게이트다. `INSTALL_HOLD`를 유지한다.

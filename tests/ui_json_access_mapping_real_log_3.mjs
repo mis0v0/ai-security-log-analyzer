@@ -5,7 +5,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {chromium} from '@playwright/test';
+import {launchTestChrome} from './a11y_browser.mjs';
 import AxeBuilder from '@axe-core/playwright';
 
 const root = resolve(import.meta.dirname, '..');
@@ -68,8 +68,8 @@ try {
     try { if ((await fetch(`${origin}/api/health`)).ok) break; } catch { /* startup */ }
     await new Promise((done) => setTimeout(done, 50));
   }
-  browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({acceptDownloads: true});
+  browser = await launchTestChrome();
+  const context = await browser.newContext({serviceWorkers: 'block', acceptDownloads: true});
   await context.route('**/*', async (route) => {
     if (new URL(route.request().url()).origin !== origin) { external++; return route.abort(); }
     await route.continue();

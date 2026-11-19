@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tomllib
@@ -37,6 +39,7 @@ RUNTIME_ASSET_ALLOWLIST = (
 )
 OUTPUT_RELATIVE = Path("dist") / "ai-security-log-analyzer"
 OUTPUT_MARKER = ".ai-security-log-analyzer-owned"
+OUTPUT_MARKER_CONTENT = b"ai-security-log-analyzer onedir prototype\n"
 
 
 def validate_output_directory(repo_root: Path, output: Path) -> Path:
@@ -72,16 +75,45 @@ def validate_work_directory(repo_root: Path, workpath: Path) -> Path:
     return candidate
 
 
+def _verify_output_marker(directory_fd: int) -> None:
+    fd = os.open(OUTPUT_MARKER, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+    try:
+        if (
+            not stat.S_ISREG(os.fstat(fd).st_mode)
+            or os.read(fd, len(OUTPUT_MARKER_CONTENT) + 1) != OUTPUT_MARKER_CONTENT
+        ):
+            raise ValueError("Output ownership could not be verified.")
+    finally:
+        os.close(fd)
+
+
+def ensure_output_marker(directory: Path) -> None:
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fd = os.open(
+                OUTPUT_MARKER, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=directory_fd,
+            )
+        except FileExistsError:
+            _verify_output_marker(directory_fd)
+        else:
+            with os.fdopen(fd, "wb") as marker:
+                marker.write(OUTPUT_MARKER_CONTENT)
+    finally:
+        os.close(directory_fd)
+
+
 def clean_owned_output(repo_root: Path, output: Path) -> None:
     target = validate_output_directory(repo_root, output)
-    marker = target.parent / OUTPUT_MARKER
     if not target.exists():
         return
-    if marker.is_symlink() or not marker.is_file():
-        raise ValueError("Output ownership could not be verified.")
     try:
-        if marker.read_text(encoding="ascii") != "ai-security-log-analyzer onedir prototype\n":
-            raise ValueError("Output ownership could not be verified.")
+        directory_fd = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            _verify_output_marker(directory_fd)
+        finally:
+            os.close(directory_fd)
     except OSError:
         raise ValueError("Output ownership could not be verified.") from None
     shutil.rmtree(target)
@@ -198,10 +230,8 @@ def main(argv: list[str] | None = None) -> int:
             print("STANDALONE_BUILD_BLOCKED: an output or runtime asset path is unsafe.", file=sys.stderr)
             return 2
         try:
-            output.parent.joinpath(OUTPUT_MARKER).write_text(
-                "ai-security-log-analyzer onedir prototype\n", encoding="ascii"
-            )
-        except OSError:
+            ensure_output_marker(output.parent)
+        except (OSError, ValueError):
             print("STANDALONE_BUILD_BLOCKED: output marker could not be created.", file=sys.stderr)
             return 2
         command = [

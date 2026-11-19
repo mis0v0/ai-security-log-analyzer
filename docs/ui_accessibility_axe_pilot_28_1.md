@@ -2,6 +2,17 @@
 
 2026-10-20. 시작 `main`과 `origin/main`은 `88169bccc440ab10e3061f04987e541bf65af133`에서 clean, behind/ahead 0/0이었다. 해당 SHA의 [GitHub Actions run 39255398064](https://github.com/misosos/ai-security-log-analyzer/actions/runs/39255398064)는 completed/success다. 변경 전 macOS 전체 회귀는 **2,351 passed, 기존 경고 2개**, UI/Node 관련 pytest는 **17 passed, 같은 경고 2개**였다. 이 문서의 로컬 결과는 새 커밋을 push하기 전의 macOS 측정이다. 새 커밋의 Ubuntu CI 결과는 **NOT_TESTED**다.
 
+## SEC-2 브라우저 공급망
+
+2026-11-18 기준 현재 실행 계약이다. 아래 Phase 28.1 기록은 당시 환경과 결과를 보존한다.
+
+- npm 잠금의 5개 정확한 버전을 OSV에 다시 조회했으며 일치 항목은 0건이었다. Playwright 1.64.1의 기본 Chromium 156.0.8078.4는 Skia 보안 수정 버전 156.0.8078.73보다 이전이다. CI Node는 11월 보안 릴리스인 24.22.3을 고정한다. [Playwright 브라우저 명세](https://github.com/microsoft/playwright/blob/v1.64.1/packages/playwright-core/browsers.json), [CVE-2026-118340](https://nvd.nist.gov/vuln/detail/CVE-2026-118340), [Node 릴리스](https://nodejs.org/en/blog/release/v24.22.3/)
+- Ubuntu 24.04 x64 CI는 Google 공식 apt 경로의 Chrome Stable 158.0.8127.36-1 패키지를 사용한다. 전체 deb의 크기와 SHA-256이 맞을 때만 전용 임시 디렉터리에 추출한다. 패키지 설치 스크립트 및 Playwright의 Chromium/FFmpeg 공급 경로는 실행 경로에서 제외한다. 해시와 크기는 Google Packages.gz에서 확인했고, 해당 인덱스의 해시는 InRelease와 일치했다. InRelease 서명은 이번 작업 환경에서 검증하지 못했다. 최초 실행 승인 및 향후 핀 갱신 전에 독립적으로 확인한 Google 키로 서명 → 인덱스 → deb 해시 사슬을 검증한다. 핀 버전이 없어지거나 해시가 어긋나면 작업이 실패한다. [Chrome 보안 릴리스](https://chromereleases.googleblog.com/2026/11/), [Google Linux 저장소 및 키](https://www.google.com/linuxrepositories/)
+- macOS arm64는 Google 공식 배포 Chrome Stable 158.0.8127.37 또는 사용 시점의 보안 수정판을 사용한다. 실행 전에 앱의 Info.plist 버전과 실제 arm64 실행 파일을 확인하고, codesign의 서명 검증과 Gatekeeper 평가로 Google 서명자와 배포 무결성을 확인한다. 검증한 앱의 Contents/MacOS/Google Chrome 절대 경로를 ASLA_TEST_CHROME에 지정한다. 테스트 코드는 이 경로를 신뢰하므로 로컬 서명·버전 검증은 운영자 책임이다. [Google 공식 다운로드](https://www.google.com/chrome/), [Chrome 보안 릴리스](https://chromereleases.googleblog.com/2026/11/)
+- 두 접근성 진입점은 명시된 실행 파일과 chromiumSandbox: true로 실행한다. Ubuntu 24.04의 AppArmor 사용자 네임스페이스 제한은 설치 경로에 의존할 수 있어 runner.temp에 추출한 Chrome의 샌드박스 시작은 별도 검증이 필요하다. 제한이 걸리면 승인된 격리 러너와 해당 경로용 프로필을 검토한다. 워크플로에서 시스템 전역 정책을 완화하거나 샌드박스를 끄는 대체 경로는 없다. [Ubuntu AppArmor 제한](https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md), [Playwright 실행 옵션](https://playwright.dev/docs/api/class-browsertype#browser-type-launch)
+
+이번 단계는 정적 검증만 수행했다. 실제 패키지 바이트, macOS 서명, Ubuntu 샌드박스, Playwright와 Chrome 간 호환성, 접근성·CSP·외부 요청 차단·민감정보 회귀는 실행으로 확인해야 한다. INSTALL_HOLD를 유지한다.
+
 ## 범위와 실행 계약
 
 Node가 없던 저장소에 `package.json`과 `package-lock.json`을 **UI 테스트 전용**으로 추가했다. 두 최상위 패키지는 `devDependencies`에 정확한 버전으로 고정한다. `npm ci --ignore-scripts --no-audit --no-fund`로 재현하고, 고정 Chromium headless shell만 `playwright install chromium --only-shell`로 설치한다. 브라우저는 `PLAYWRIGHT_BROWSERS_PATH`의 임시 위치에 둔다. `frontend/`, production Python dependency와 `uv.lock`, API/SSE schema, 탐지·관계·위험도·사례의 의미는 바꾸지 않았다. Production JS/CSS에 axe/Playwright import나 번들 과정은 없다. GOV.UK Frontend, Lucide, Chart.js, uPlot, Web Awesome은 설치하지 않았다.

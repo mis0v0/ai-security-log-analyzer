@@ -10,11 +10,25 @@
 
 ## Deprecated legacy API와 migration
 
-`POST /api/analyze`는 제거하지 않고 OpenAPI `deprecated` 및 `Deprecation: true` 응답 헤더를 제공한다. 상위 `analysis_id`, `status`, `summary`, `results`, `global_correlation`, `ai_summary` 경로는 유지한다. `analysis_id`는 영구 저장 ID가 아닌 고정 `not-persisted`다. Phase 33.4B에서 `schema_version=2`를 추가하고 결과의 원래 `ip`를 제거해 `subject_alias`로 교체했다. schema 1의 `ip` 소비자는 새 필드로 migration해야 한다. 같은 필드에 별칭을 넣어 의미만 조용히 바꾸지 않는다.
+`POST /api/analyze`는 유지하며 OpenAPI에 `deprecated`로 표시한다. 성공 응답에는 `Deprecation: true`가 포함된다. 상위 `analysis_id`, `status`, `summary`, `results`, `global_correlation`, `ai_summary` 경로는 유지한다. `analysis_id`는 영구 저장 ID가 아닌 고정 `not-persisted`다. Phase 33.4B에서 `schema_version=2`를 추가하고 결과의 원래 `ip`를 제거해 `subject_alias`로 교체했다. schema 1의 `ip` 소비자는 새 필드로 migration해야 한다. 같은 필드에 별칭을 넣어 의미만 조용히 바꾸지 않는다.
 
 변경 전에는 중첩 `correlation`, `risk_factors`, `detections`, `global_correlation`이 trusted raw dictionary를 포함할 수 있었다. 변경 후 `results[*].subject_alias`는 해당 응답 안에서 결정되는 `대상 A` 형식의 별칭이다. `results[*].detections`는 지원 타입별 탐지 여부·승인된 수치·패턴·HTTP method/status/size, `correlation`은 승인 relation type·UTC endpoint·delta·계정 비표시 안내, `risk_factors`는 기존 level/confidence와 고정 limitation만 가진다. `global_correlation`은 승인된 네 범주의 count와 고정 limitation만 가진다. 원래 계정·IP·HTTP path·full query·raw rationale는 없다. Unknown/malformed input은 고정 오류로 실패하며 0건으로 위장하지 않는다.
 
 이는 의도적인 nested-value breaking change다. raw `target_users`, `user`, `risk_factors.account_context`, `global_correlation` record의 exact 값에 의존하는 소비자는 안전 필드로 migration해야 한다. 예를 들어 계정 목록 대신 `target_account_count`, 원문 계정 relation endpoint 대신 `account_reference_available=false`와 `account_notice`를 사용한다. 새 개발은 versioned `POST /api/v1/investigations`를 사용한다. 이 deprecation은 legacy endpoint가 hosted/public upload에 안전하다는 뜻이 아니다. Sunset 날짜는 정하지 않았다.
+
+### 레거시 업로드 오류 응답
+
+문서화된 레거시 계약은 OpenAPI의 deprecation 표시, 성공 응답의 deprecation 헤더와 개인정보 보호 projection을 포함한다. 모든 오류의 헤더 또는 본문 형식을 일괄 지정하는 계약은 없으며, OpenAPI에도 413·429 응답 형식은 따로 선언되어 있지 않다.
+
+아래는 FastAPI 0.141.1과 Starlette 1.6.0 환경에서 합성 입력으로 확인한 동작이다. 검증 범위는 [in-process ASGI 테스트](../tests/test_legacy_api_asgi_boundaries.py)이며, 표는 현재 관찰을 기록한다.
+
+| 조건 | 관찰한 상태 및 본문 | 관찰한 `Deprecation` |
+| --- | --- | --- |
+| 실제 수신 바이트 누계 초과 | 413, `application/json`, `{"detail":"Content Too Large"}` | 없음 |
+| 선언된 `Content-Length`가 상한 초과 | 413, `text/plain; charset=utf-8`, `Content Too Large` | 없음 |
+| 동시 요청 슬롯 포화 | 429, 고정 JSON `detail` 메시지 | `true` |
+
+해당 테스트는 고정 오류 본문과 각 원본 응답 헤더에서 합성 민감정보가 노출되지 않았음을 확인했다. 모든 413을 JSON으로 파싱하는 소비자는 평문 응답에서 실패할 수 있고, 모든 레거시 오류에 deprecation 헤더가 있다고 가정하는 소비자는 413에서 그 신호를 받지 못할 수 있다. 외부 소비자 호환성, 역방향 프록시가 생성한 응답, 실제 HTTP 전송과 다른 오류 경로는 미검증이다.
 
 ## 사례 API·HTML·CLI·LLM
 
@@ -34,6 +48,6 @@ DETECT-2는 부모 구성요소·decoding·역슬래시·질의 문자열을 구
 
 Phase 8의 네 새 웹 관찰은 trusted parser event의 원래 path/query를 canonical target 계산에 일시적으로 사용하지만, 공개 경계에는 고정 pattern ID의 한국어 category·횟수·시간·위험도·한계만 복사한다. Deprecated legacy API도 새 type별 explicit safe model을 사용하며 raw evidence를 통과시키지 않는다. 기존 Path Traversal의 원래 path/query 제거 정책과 동일하다. [웹 요청 관찰 설계](web_attack_observation_design.md)에 패턴과 오탐·미탐 한계를 기록했다.
 
-Trusted internal dictionary의 직접 `repr(raw_result)`은 원문을 노출할 수 있다. 개발자는 이를 로그·exception·테스트 실패 diff·진단 preview에 넣지 않아야 한다. Legacy upload 자체는 기존 whole-file read와 suffix 검사를 유지하므로 public/hosted upload로 사용하지 않는다. 새로운 versioned local endpoint의 loopback·bounded upload 계약과 혼동하지 않는다.
+Trusted internal dictionary의 직접 `repr(raw_result)`은 원문을 노출할 수 있다. 개발자는 이를 로그·exception·테스트 실패 diff·진단 preview에 넣지 않아야 한다. 레거시 업로드에는 본문·파일별 크기와 동시 요청 제한이 있지만 인증이 없으므로 public/hosted upload로 사용하지 않는다. 버전이 명시된 로컬 엔드포인트의 loopback 계약은 별도로 적용된다.
 
 PR #7 P2는 인코딩 미평가를 기존 고정 warning/limitation 필드로 구분한다. 내부 `unassessed_reason`과 `url_original_path`를 API 필드로 직렬화하지 않는다. 디코딩할 수 없는 원문은 decoded Evidence로 표시하지 않으며 CLI Evidence에서도 가린다. 미평가 음성의 legacy `pattern_category`만 고정 안내로 채운다. 새로운 원문·IP·query·개수는 공개하지 않는다. CLI의 기존 validated-IP subject header 계약은 유지한다.

@@ -112,7 +112,9 @@ Access 입력은 기존 CLF/Combined와 명시적 `asla-nginx-access-v1` JSON �
 uv run pytest
 uv run python -m app.evaluation
 npm ci --ignore-scripts --no-audit --no-fund
-npm run test:a11y
+ASLA_TEST_CHROME="/absolute/path/to/verified/chrome" npm run test:a11y
 ```
+
+브라우저 테스트 전에 [SEC-2 플랫폼별 Chrome 검증 절차](docs/ui_accessibility_axe_pilot_28_1.md#sec-2-브라우저-공급망)를 확인한다.
 
 평가는 작은 합성 시나리오의 고정 기대 결과이며 실제 운영환경 탐지율이 아닙니다. [문서 지도](docs/index.md) · [시연 안내](docs/final_demo_guide.md) · [탐지 평가](docs/detection_evaluation.md) · [개인정보](docs/public_analysis_privacy.md) · [변경 이력](CHANGELOG.md) · [보안 신고](SECURITY.md) · [MIT License](LICENSE)
