@@ -77,7 +77,7 @@ def fetch_and_verify(gh: str, artifact: Artifact, directory: Path) -> Path:
     # workflow and exact source commit. Both upstream workflows ran from main.
     subprocess.run([
         gh, "attestation", "verify", str(archive), "--repo", repo,
-        "--predicate-type", "https://slsa.dev/provenance/v1", "--signer-repo", repo,
+        "--predicate-type", "https://slsa.dev/provenance/v1",
         "--signer-workflow", f"{repo}/.github/workflows/release.yml@refs/heads/main",
         "--source-ref", "refs/heads/main", "--source-digest", artifact.source_commit,
     ], check=True, timeout=120)
