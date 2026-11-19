@@ -5,7 +5,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
-SETUP_UV_SHA = "c18668ad3cf93ea998bef934396af7bb5c839dc7"
 SETUP_NODE_SHA = "949feb2413d6458794dcd2491c4babbbce0c15c1"
 
 
@@ -79,7 +78,6 @@ def test_ci_actions_are_full_sha_pinned_with_reviewed_tags():
     uses = re.findall(r"(?m)^\s*uses:\s*([^\s#]+)(?:\s+#\s*(\S+))?$", text)
     assert uses == [
         (f"actions/checkout@{CHECKOUT_SHA}", "v7.0.1"),
-        (f"astral-sh/setup-uv@{SETUP_UV_SHA}", "v10.2.0"),
         (f"actions/setup-node@{SETUP_NODE_SHA}", "v7.1.0"),
     ]
     for reference, _tag in uses:
@@ -88,17 +86,22 @@ def test_ci_actions_are_full_sha_pinned_with_reviewed_tags():
 
 def test_ci_pins_python_uv_and_disables_dependency_cache():
     text = _text()
-    assert 'version: "0.11.26"' in text
-    assert 'python-version: "3.12.7"' in text
-    assert "enable-cache: false" in text
+    assert "run: python3 -I .github/scripts/ci_toolchain.py" in text
+    assert 'test "$(uv --version | cut -d \' \' -f 2)" = "0.13.9"' in text
+    assert "sys.version_info[:3] == (3, 12, 16)" in text
+    assert "UV_NO_CACHE=1" in (ROOT / ".github/scripts/ci_toolchain.py").read_text()
+    assert "package-manager-cache: false" in text
+    assert "actions/cache@" not in text
+    assert "setup-uv@" not in text
     assert "persist-credentials: false" in text
 
 
 def test_ci_runs_the_complete_locked_validation_sequence():
     text = _text()
     commands = (
+        "run: python3 -I .github/scripts/ci_toolchain.py",
         "uv lock --check",
-        "uv sync --dev --locked",
+        'uv sync --dev --locked --no-build --no-python-downloads --python "$UV_PYTHON"',
         "uv run python -m compileall -q app tests main.py",
         "uv run pytest -q",
     )
@@ -138,7 +141,7 @@ def test_ci_has_no_secrets_privileged_install_or_deployment_commands():
     ):
         assert forbidden not in text
     assert re.search(r"(?m)^(?:env:|  env:|    env:)\s*$", text) is None
-    assert re.findall(r"(?m)^        env:\s*$", text) == ["        env:"] * 2
+    assert re.findall(r"(?m)^        env:\s*$", text) == ["        env:"] * 3
     assert "tz: utc" in text
     assert re.search(r"(?m)^\s*[a-z-]+:\s*write\s*$", text) is None
 
