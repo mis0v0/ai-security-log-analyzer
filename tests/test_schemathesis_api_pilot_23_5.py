@@ -161,25 +161,23 @@ def test_legacy_openapi_generated_bounded_missing_fields(data):
 
 
 def test_legacy_valid_three_file_projection_and_cleanup():
-    with TemporaryDirectory(prefix="schema-legacy-23-5-") as directory:
-        created = []
-        original = api_module.tempfile.NamedTemporaryFile
+    created = []
+    original = api_module.save_upload_to_temp
 
-        def tracked(*args, **kwargs):
-            kwargs["dir"] = directory
-            result = original(*args, **kwargs)
-            created.append(Path(result.name))
-            return result
+    def tracked(*args, **kwargs):
+        path = original(*args, **kwargs)
+        created.append(Path(path))
+        return path
 
-        files = {
-            "application_file": (FILENAME, (SAMPLE_FILES / "brute_force.log").read_bytes(), "text/plain"),
-            "ssh_file": ("synthetic-ssh.log", (SAMPLE_FILES / "ssh_auth.log").read_bytes(), "text/plain"),
-            "access_file": ("synthetic-access.log", (SAMPLE_FILES / "web_shell.log").read_bytes(), "text/plain"),
-        }
-        with patch.object(api_module.tempfile, "NamedTemporaryFile", tracked):
-            with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
-                response = client.post("/api/analyze", files=files)
-        assert response.status_code == 200
-        assert response.headers["Deprecation"] == "true"
-        assert created and all(not path.exists() for path in created)
-        _safe(response)
+    files = {
+        "application_file": (FILENAME, (SAMPLE_FILES / "brute_force.log").read_bytes(), "text/plain"),
+        "ssh_file": ("synthetic-ssh.log", (SAMPLE_FILES / "ssh_auth.log").read_bytes(), "text/plain"),
+        "access_file": ("synthetic-access.log", (SAMPLE_FILES / "web_shell.log").read_bytes(), "text/plain"),
+    }
+    with patch.object(api_module, "save_upload_to_temp", tracked):
+        with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+            response = client.post("/api/analyze", files=files)
+    assert response.status_code == 200
+    assert response.headers["Deprecation"] == "true"
+    assert len(created) == 3 and all(not path.exists() for path in created)
+    _safe(response)

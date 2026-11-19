@@ -1,12 +1,17 @@
 import asyncio
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 import tempfile
+from threading import BoundedSemaphore
 import uuid
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
+from starlette.types import Receive, Scope, Send
 
 from app.analyzer.linux_audit_api import (
     LinuxAuditAnalysisValidationError,
@@ -111,10 +116,37 @@ from app.security.linux_audit_api import (
 
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+# Three maximum-sized files plus room for multipart framing.
+MAX_LEGACY_BODY_SIZE = 3 * MAX_FILE_SIZE + 64 * 1024
+MAX_CONCURRENT_LEGACY_REQUESTS = 2
 ALLOWED_EXTENSIONS = {".log", ".txt"}
 
 
-def save_upload_to_temp(file: UploadFile) -> str:
+class LegacyAnalysisRoute(APIRoute):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._body_limit = RequestBodyLimitMiddleware(super().handle, MAX_LEGACY_BODY_SIZE)
+        self._slots = BoundedSemaphore(MAX_CONCURRENT_LEGACY_REQUESTS)
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["method"] != "POST":
+            await super().handle(scope, receive, send)
+            return
+        if not self._slots.acquire(blocking=False):
+            response = JSONResponse(
+                {"detail": "분석 요청이 처리 중입니다. 잠시 후 다시 시도하세요."},
+                status_code=429,
+                headers={"Deprecation": "true"},
+            )
+            await response(scope, receive, send)
+            return
+        try:
+            await self._body_limit(scope, receive, send)
+        finally:
+            self._slots.release()
+
+
+def save_upload_to_temp(file: UploadFile, directory: Path, source: str) -> str:
     filename = file.filename or ""
     suffix = os.path.splitext(filename)[1].lower()
 
@@ -124,7 +156,7 @@ def save_upload_to_temp(file: UploadFile) -> str:
             detail="허용되지 않은 파일 형식입니다. .log 또는 .txt 파일을 선택하세요.",
         )
 
-    content = file.file.read()
+    content = file.file.read(MAX_FILE_SIZE + 1)
 
     if not content:
         raise HTTPException(
@@ -138,13 +170,9 @@ def save_upload_to_temp(file: UploadFile) -> str:
             detail="파일 크기가 너무 큽니다. 최대 10MB까지 업로드할 수 있습니다.",
         )
 
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=suffix,
-    ) as temp_file:
-        temp_file.write(content)
-
-    return temp_file.name
+    path = directory / (source + suffix)
+    path.write_bytes(content)
+    return str(path)
 
 
 def build_analysis_response(
@@ -160,59 +188,37 @@ def health_check():
     }
 
 
-async def analyze_logs(
+def analyze_logs(
     response: Response,
     application_file: UploadFile = File(...),
     ssh_file: UploadFile = File(...),
     access_file: UploadFile = File(...),
 ):
     response.headers["Deprecation"] = "true"
-    temp_paths = []
-
+    uploads = (
+        ("application", application_file),
+        ("ssh", ssh_file),
+        ("access", access_file),
+    )
     try:
-        application_path = save_upload_to_temp(application_file)
-        temp_paths.append(application_path)
-
-        ssh_path = save_upload_to_temp(ssh_file)
-        temp_paths.append(ssh_path)
-
-        access_path = save_upload_to_temp(access_file)
-        temp_paths.append(access_path)
-
-        log_sources = [
-            {
-                "source": "application",
-                "path": application_path,
-            },
-            {
-                "source": "ssh",
-                "path": ssh_path,
-            },
-            {
-                "source": "access",
-                "path": access_path,
-            },
-        ]
-
-        try:
+        with tempfile.TemporaryDirectory() as directory:
+            log_sources = [
+                {"source": source, "path": save_upload_to_temp(upload, Path(directory), source)}
+                for source, upload in uploads
+            ]
             result = analyze(log_sources)
             return build_analysis_response(result, total_sources=len(log_sources))
-        except (OSError, UnicodeError, ValueError, TypeError, KeyError, IndexError, RuntimeError):
-            return JSONResponse(
-                status_code=500,
-                headers={"Deprecation": "true"},
-                content={
-                    "error_code": "LEGACY_ANALYSIS_FAILED",
-                    "user_message": "분석 결과를 준비하지 못했습니다.",
-                    "recovery_action": "입력 형식을 확인한 뒤 로컬 분석을 다시 시도하세요.",
-                    "retryable": False,
-                },
-            )
-
-    finally:
-        for path in temp_paths:
-            if os.path.exists(path):
-                os.remove(path)
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError, IndexError, RuntimeError):
+        return JSONResponse(
+            status_code=500,
+            headers={"Deprecation": "true"},
+            content={
+                "error_code": "LEGACY_ANALYSIS_FAILED",
+                "user_message": "분석 결과를 준비하지 못했습니다.",
+                "recovery_action": "입력 형식을 확인한 뒤 로컬 분석을 다시 시도하세요.",
+                "retryable": False,
+            },
+        )
 
 
 def _linux_audit_error_response(error: object) -> JSONResponse:
@@ -579,12 +585,13 @@ def create_app(
                 **{code: {"model": LiveErrorResponse} for code in (400, 403, 404, 429, 500, 503)},
             },
         )
-    configured_app.add_api_route(
+    configured_app.router.add_api_route(
         "/api/analyze",
         analyze_logs,
         methods=["POST"],
         response_model=AnalysisResponse,
         deprecated=True,
+        route_class_override=LegacyAnalysisRoute,
     )
     configured_app.add_api_route(
         "/api/v1/investigations/sample",
