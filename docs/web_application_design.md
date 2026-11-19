@@ -39,9 +39,15 @@ FastAPI entry point는 `app/api.py`의 module-level `app = create_app()`이다. 
 | `ssh_file` | `ssh` | SSH 인증 로그 | 예 |
 | `access_file` | `access` | 웹 접근 로그 | 예 |
 
-각 파일은 filename suffix가 `.log` 또는 `.txt`인지, 비어 있지 않은지, 읽은 byte가 10 MiB 이하인지 검사한다. 개별 MIME type과 실제 text/encoding/content는 검증하지 않는다. 세 파일 합계나 multipart envelope의 app-level 제한도 없다. `file.file.read()`로 전체 content를 메모리에 읽은 뒤 `NamedTemporaryFile(delete=False)`에 쓰고, `analyze()`를 정확히 한 번 호출하며 `finally`에서 알려진 path를 삭제한다. 정상·분석 실패 테스트는 삭제를 확인하지만 process crash 뒤 orphan cleanup은 보장하지 않는다. filename은 suffix 선택에만 쓰지만 invalid suffix 오류가 suffix를 되돌려 준다.
+레거시 라우트는 multipart 구분자와 파트 헤더를 포함한 ASGI 요청 본문 전체를 **30 MiB + 64 KiB**로 제한한다. 선언된 `Content-Length`가 한도를 넘으면 본문을 읽기 전에 413을 반환한다. 수신 바이트의 누계도 검사하며 한도를 넘긴 청크는 multipart 파서에 전달하지 않는다. 한도 초과 요청은 파일 스테이징과 분석에 도달하지 않는다.
 
-현재 response는 Pydantic `AnalysisResponse`이며 top-level은 `analysis_id`, `status`, `summary`, `results`, `global_correlation`, `ai_summary`다. `analysis_id`는 UUID, `ai_summary`는 `None`이다. per-IP result의 detection evidence, correlation과 risk factors 및 raw global correlation을 그대로 가까이 노출하므로 향후 privacy-safe case API로 재사용하지 않는다. 기본 route는 LLM을 호출하지 않지만 인증·인가·rate limit·processing timeout·concurrency limit·custom bounded error envelope가 없다. CORS middleware도 없다.
+파일당 **10 MiB** 제한은 multipart 파싱 후 스테이징에서 적용한다. 파일마다 최대 10 MiB + 1바이트를 읽어 초과 여부를 판별한다. 빈 파일, 허용 범위를 벗어난 크기, `.log` 또는 `.txt` 이외의 확장자는 고정 메시지의 400으로 거부한다. 파일 검증은 확장자와 크기를 기준으로 하며, 개별 MIME 타입이나 인코딩·본문을 별도로 검사하지 않는다.
+
+애플리케이션 인스턴스에 등록된 레거시 라우트 인스턴스마다 동시 요청 슬롯이 두 개다. 슬롯은 본문 처리 전에 확보하고 파싱·스테이징·분석을 거쳐 라우트 처리가 끝날 때 반환한다. 슬롯이 모두 사용 중이면 요청을 대기열에 넣지 않고 본문을 읽기 전에 429를 반환한다. 워커나 앱 인스턴스 사이에 이 제한을 공유하지 않는다.
+
+정상 업로드의 스테이징과 분석은 작업 스레드에서 수행한다. 스테이징 파일은 요청별 임시 디렉터리에 서버가 정한 소스명과 검증한 확장자로 저장하며, 정상 완료와 예외 시 컨텍스트가 정리한다. multipart 스풀은 별도 수명으로 관리된다. 파싱 성공 시 FastAPI가 폼을 닫고, 파싱·수신 오류 시 Starlette가 열린 스풀을 닫는다. In-process ASGI 테스트에서 업로드 중 연결 종료 신호와 태스크 취소 후 스풀 닫힘 및 슬롯 반환을 확인했다. 실제 소켓 종료, 프로세스 강제 종료 후 파일 정리, 배포 환경의 자원 사용량은 이 검증 범위에 포함되지 않는다.
+
+성공 응답은 개인정보 보호 projection을 적용한 `AnalysisResponse`이며 `schema_version=2`를 사용한다. 기본 라우트는 LLM을 호출하지 않으며 인증·인가와 요청 처리 시간 제한은 없다. CORS middleware도 없다. 413·429의 [관찰된 응답과 계약 범위](public_analysis_privacy.md#레거시-업로드-오류-응답)를 참고한다.
 
 현재 renderer는 file 없이 `render_investigation_report_html(projection) -> str`로 standalone HTML을 반환할 수 있다. `write_investigation_report_html()`은 CLI용 secure local writer다. 현재 HTML은 기존 subject 중심 `InvestigationReportProjection`을 표시하며 새 조사 사례/typed Timeline은 포함하지 않는다.
 
@@ -89,7 +95,7 @@ Node 최소 DOM stub은 클릭 전 다운로드 없음, Blob type·크기·고�
 
 `app/local_investigation_api.py`의 `POST /api/v1/investigations`는 `multipart/form-data`로 `application_file`, `ssh_file`, `access_file` 각 파일을 정확히 하나씩 받는다. 응답은 closed `LocalInvestigationResponse`다. `schema_version`, `local_context`, `analysis_summary`, `case_summary`, `cases`, `independent_observations`, `interpretation_notices`, `capabilities`, `bounded_warnings`, `report_export`가 top-level 전부다. `local_context`는 합성 샘플이 아닌 사용자 제공 로그의 로컬 분석임을 명시한다. 고정 파일명 HTML export는 동일 analysis에서 만들며 sample 안내를 포함하지 않는다. 로컬 HTML에서는 HTTP 요청 경로 값을 개인정보 보호 안내로 대체하고 Path Traversal의 일치 패턴·승인 상태 근거는 유지한다. 기존 sample/CLI renderer 출력은 바꾸지 않는다. 실패는 `error_code`, 고정 한국어 `user_message`, `recovery_action`, `retryable`, 세 필드 중 하나 또는 null인 `field`만 반환한다. Partial success 또는 0건 위장은 없다.
 
-ASGI `request.client.host`를 표준 IP 판정으로 확인하고 IPv4 `127.0.0.1`과 IPv6 `::1`만 허용한다. IPv4-mapped IPv6, 누락·파싱 불가 주소는 거부한다. Host도 literal loopback이어야 한다. `X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `Via`, 교차 출처 Origin과 cross-site Fetch Metadata를 거부하지만 이 검사는 인증·방화벽·proxy 설정의 대체물이 아니다. 문서화한 로컬 Uvicorn 명령은 `--no-access-log --no-proxy-headers`를 사용해 URL query access log와 proxy-header 신뢰를 끈다. 다른 서버 설정은 이 경계를 다시 검증해야 한다. 기존 `/api/analyze`는 호환성 때문에 남아 있으며 인증 없이 whole-file read를 수행하므로 공개 노출하면 안 된다. Hosted actual-log upload는 no-go다.
+ASGI `request.client.host`를 표준 IP 판정으로 확인하고 IPv4 `127.0.0.1`과 IPv6 `::1`만 허용한다. IPv4-mapped IPv6, 누락·파싱 불가 주소는 거부한다. Host도 literal loopback이어야 한다. `X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `Via`, 교차 출처 Origin과 cross-site Fetch Metadata를 거부하지만 이 검사는 인증·방화벽·proxy 설정의 대체물이 아니다. 문서화한 로컬 Uvicorn 명령은 `--no-access-log --no-proxy-headers`를 사용해 URL query access log와 proxy-header 신뢰를 끈다. 다른 서버 설정은 이 경계를 다시 검증해야 한다. 기존 `/api/analyze`는 호환성 때문에 유지한다. 별도의 인증과 위 로컬 전용 요청 검사가 없는 경로이므로 공개 노출하면 안 된다. Hosted actual-log upload는 no-go다.
 
 설치된 Starlette 1.6.0 / python-multipart 0.0.32의 `max_files`와 `max_fields`는 parser 단계에서 동작하지만 `max_part_size`는 파일 part 크기를 제한하지 않는다. 따라서 FastAPI의 자동 `File(...)` 파싱을 쓰지 않고 `Request.stream()`의 누적 multipart envelope를 96 KiB에서 끊은 뒤 `MultiPartParser(max_files=3, max_fields=0)`로 구조를 확인한다. 파일은 4096바이트 단위로 읽어 각 32 KiB, 합계 80 KiB, 한 줄 2048바이트, 파일당 512줄을 검사한다. Archive signature, control/NUL, invalid UTF-8, whitespace-only와 source별 최소 parser shape를 거부한다. UTF-8 incremental decoder를 사용한다. Extension, part MIME과 filename은 신뢰하지 않는다. 앱 이전의 ASGI/proxy 단일 청크 할당은 통제할 수 없으므로 edge 수준 제한이 없는 공개 배포는 승인되지 않는다.
 
@@ -243,7 +249,7 @@ V1은 server-side persistent result, result GET endpoint와 raw log 재업로드
 - `POST /api/v1/investigations`: `multipart/form-data`, exact field `application_file`, `ssh_file`, `access_file`, 모두 하나씩 필수. 최대 file count는 3이며 unknown/repeated field는 reject한다. local/private-only로 시작한다.
 - Linux Audit는 이 계약에 포함하지 않는다. 별도 secured boundary를 “optional file”로 위장하지 않는다.
 
-현재 legacy 값은 per-file 10 MiB지만 whole-file memory read 후 검사하므로 새 endpoint의 안전 근거가 아니다. Phase 5 local-only endpoint의 작은 고정 상한과 단일 환경 측정은 위에 기록했다. Hosted upload의 edge/app 제한과 실제 처리량·p95는 여전히 `TO_BE_BENCHMARKED` 배포 요구사항이다. 대표 small/large/malformed fixtures로 peak memory, CPU와 p95 latency를 다시 측정하고 edge와 app limit을 함께 고정하기 전 hosted upload는 no-go다.
+레거시의 요청 전체 한도와 파일당 10 MiB 한도는 위 레거시 라우트에 적용된다. Phase 5 local-only endpoint의 작은 고정 상한과 단일 환경 측정은 위에 기록했다. Hosted upload의 edge/app 제한과 실제 처리량·p95는 여전히 `TO_BE_BENCHMARKED` 배포 요구사항이다. 대표 small/large/malformed fixtures로 peak memory, CPU와 p95 latency를 다시 측정하고 edge와 app limit을 함께 고정하기 전 hosted upload는 no-go다.
 
 request media type은 exact `multipart/form-data` boundary를 요구한다. 개별 part MIME은 client 주장으로 간주하여 allowlist prefilter만 하고 신뢰하지 않는다. extension도 보조 signal이다. chunked byte count, archive signature 거부, NUL/binary rejection, strict UTF-8, non-whitespace, maximum line length와 실제 parser compatibility를 server에서 검증한다. archive는 V1에서 지원하지 않는다. filename은 비신뢰 input이며 path, temp name, response, error, log 또는 report에 쓰지 않는다.
 
@@ -501,8 +507,8 @@ Task는 (1) sample 시작, (2) 지원 파일·데이터 처리 찾기, (3) 의�
 
 ## 24. 알려진 한계
 
-- Deprecated legacy `/api/analyze`는 case API가 아니며, nested 값은 개인정보 안전 projection으로 이관했지만 기존 whole-file upload 제한 때문에 인증 없는 실제 upload를 public internet에 노출할 수 없다. 별도 sample-only privacy-safe case API와 합성 샘플 웹 사례·Timeline 화면은 구현되었다.
-- 현재 file validation은 suffix/size 중심이고 whole-file memory read, total limit 부재와 crash orphan 위험이 있다.
+- Deprecated legacy `/api/analyze`는 개인정보 보호 projection을 적용한 레거시 분석 API다. 본문 크기와 동시 요청을 제한하지만 인증이 없으므로 public internet에 노출할 수 없다. 별도 sample-only privacy-safe case API와 합성 샘플 웹 사례·Timeline 화면은 구현되었다.
+- 레거시 파일 검증은 확장자와 크기 중심이다. 파일당 읽기는 제한하지만, 프로세스 강제 종료 후 임시 파일 정리와 느린 요청에 대한 시간 제한은 보장하지 않는다.
 - 현재 HTML report에는 조사 사례와 Timeline이 없다.
 - account alias는 Phase 1 assembly가 safe reference를 보존하지 않아 unavailable이다. 원본을 복원하지 않는다.
 - synchronous V1은 긴 분석, refresh와 multi-device resume에 한계가 있다.
